@@ -388,3 +388,109 @@ Stage Summary:
   * No hay tests automatizados (por instrucciones).
   * Subida de archivos desde el chat IA (procesar PDF/Excel de listas de precios): el botón adjuntar del panel IA solo inserta texto indicando que se suba desde el módulo pertinente — queda pendiente implementar parseo real de adjuntos en el chat.
   * Email real (SMTP): no implementado (es compose + copiar), por diseño.
+
+---
+Task ID: CRON-2-A
+Agent: full-stack-developer
+Task: Dark mode toggle + Global notifications bell
+
+Work Log:
+- Leí worklog.md (secciones CRON-REVIEW-1 y REV-1) + archivos de referencia: providers.tsx, topbar.tsx, popover.tsx, app-store.ts, /api/alerts/route.ts, globals.css (bloque .dark ya en línea 82). Confirmé que /api/alerts ya devuelve los 4 counts desde REV-1 (no requiere extensión).
+- Feature 1 — Dark mode toggle:
+  * providers.tsx: cambié `enableSystem={false}` → `enableSystem={true}` (defaultTheme="light" sigue como fallback; respeta prefers-color-scheme del SO y permite override manual).
+  * topbar.tsx: añadido `ThemeToggle` (function inline en el mismo archivo). Patrón hydration-safe: `useState(false)` mounted + useEffect que setMounted(true) en mount. Hasta montar, renderiza Button disabled (Sun icon, aria-hidden, tabIndex -1) — sin mismatch SSR/cliente.
+  * `// eslint-disable-next-line react-hooks/set-state-in-effect` puesto INSIDE el effect, inmediatamente antes de `setMounted(true)` (la primera iteración lo puse arriba del useEffect → trigger de "Unused eslint-disable directive" + error aún activo). Corregido.
+  * Uso `resolvedTheme ?? theme` para el icon: con enableSystem=true, theme puede ser "system" — resolvedTheme da "light"|"dark" real aplicado. Toggle: `setTheme(isDark ? "light" : "dark")` (pinea elección manual, no oscila).
+  * Icono: Sun en modo dark (click→light), Moon en modo light (click→dark). title/aria-label en español. `hidden md:flex` para no saturar móvil.
+- Feature 2 — Global notifications bell:
+  * notifications-bell.tsx (NEW): useQuery(['alerts']) staleTime 60s + refetchOnMount false (cache compartida con el sidebar badge de REV-1 — 1 sola llamada de red para 2 consumers). Popover shadcn (align="end", sideOffset 6, w-72 p-0). Trigger: ghost Button con Bell + badge rojo (bg-destructive, 18px, ring-2 ring-background) si total>0; "99+" si >99.
+  * 4 items en lista: Stock bajo (Package→articles), Garantías a caducar (ShieldAlert→installations), Presupuestos sin respuesta (FileText→sale-quotes), Incidencias abiertas (Siren→incidents). Cada fila: chip icono (rojo si count>0, muted si 0) + label + pill count. Items con count=0 disabled (opacity-50, cursor-default) — no llevan a dead-ends. Empty state: "Sin avisos".
+  * Click: setOpen(false) + useAppStore.getState().setView(v) (siguiendo convención del task — evita re-render extra del bell por cambios ajenos en el store).
+- Wire-up topbar.tsx: orden Actions: IA → ThemeToggle → NotificationsBell → LogOut.
+- Verificación dev server (comando exacto del enunciado): home=200, alerts=401 (401 esperado — curl sin auth; la ruta funciona post-login como ya demostró el sidebar badge en REV-1). Compile log limpio, sin PrismaClientValidationError ni TypeErrors. `bun run lint`: 0 errores, 0 warnings.
+
+Stage Summary:
+- Archivos modificados (2): src/components/providers.tsx (1 línea enableSystem), src/components/app/topbar.tsx (ThemeToggle component + 2 imports + 2 JSX calls).
+- Archivos creados (1): src/components/app/notifications-bell.tsx. Registro en /agent-ctx/CRON-2-A-full-stack-developer.md.
+- Backend: sin cambios — /api/alerts ya devolvía los 4 counts desde REV-1 (verificado, no modificado).
+- Decisiones clave:
+  * enableSystem=true + defaultTheme="light": respeta SO, fallback claro.
+  * Toggle usa resolvedTheme (no theme) para el icono: maneja "system" mode correctamente.
+  * NotificationsBell usa useAppStore.getState().setView(v) (no hook subscription) — re-render del bell solo por cambios en su propia query.
+  * ['alerts'] cache compartido entre sidebar badge y bell — mismo queryKey, mismo staleTime — 2 componentes, 1 network call.
+  * Items count=0 deshabilitados visualmente (no dead clicks). Empty state propio dentro del popover body.
+- Verificación: dev server OK (200/401, sin errores compile). `bun run lint`: 0 errores en los 3 archivos tocados.
+
+---
+Task ID: CRON-2-B
+Agent: full-stack-developer
+Task: Loading skeletons for list views
+
+Work Log:
+- Leí worklog.md (sección CRON-REVIEW-1 + convenciones) y src/components/ui/skeleton.tsx (Skeleton ya existente con bg-accent animate-pulse rounded-md).
+- Revisé los 11 view files para entender el layout exacto de cada lista (grid columns, card shape, columnas de tabla).
+- Reemplacé ÚNICAMENTE la rama `isLoading` del ternario en cada vista. No toqué filtros, queries, mutations, fetch ni la lógica EmptyState.
+- Añadí `import { Skeleton } from "@/components/ui/skeleton"` a los 11 archivos (después del import de lucide-react, antes del de toast si lo había).
+- Skeletons de cards (6 placeholders cada uno): clients, installations, articles, suppliers, albaranes, incidents — patrón `<Card><CardContent className="p-4">…</CardContent></Card>` envuelto en `[...Array(6)].map`, mimetizando la estructura del card real (avatar + nombre + NIF/contact + 3 líneas + footer con border-t).
+- Skeletons de tablas (5 filas cada uno): sale-quotes, sale-orders, purchase-quotes, purchase-orders, maintenances — patrón `<Card><CardContent className="p-0">` con `<div className="divide-y divide-border">` y filas `flex items-center gap-3 px-4 py-3` con skeletons por columna. Las columnas ocultas en mobile (hidden md:block / hidden lg:block) en la tabla real se mantienen ocultas en el skeleton. En purchase-quotes y purchase-orders se añadió `overflow-x-auto` y `min-w-[700px]`/`min-w-[800px]` para coincidir con la tabla real.
+- Limpieza de imports: en 3 vistas read-only (sale-orders, purchase-orders, maintenances) Loader2 dejó de usarse al eliminar el spinner "Cargando..." y se eliminó del import para evitar warnings de lint. En las 8 vistas restantes Loader2 se mantiene (se usa en los botones de los diálogos/forms).
+- Registro en /agent-ctx/CRON-2-B-full-stack-developer.md.
+
+Stage Summary:
+- Archivos modificados (11): src/components/views/{clients,installations,articles,suppliers,sale-quotes,sale-orders,purchase-quotes,purchase-orders,albaranes,incidents,maintenances}-view.tsx.
+- Decisiones clave:
+  * Para los skeletons de tabla se reutilizó `<Card><CardContent className="p-0">` + `divide-y divide-border` (en vez del `border border-border rounded-md` sugerido en el enunciado) para que el skeleton ocupe exactamente la misma superficie visual que la tabla real (mismos bordes redondeados, fondo, sombra).
+  * Anchos de columnas skeleton: w-20 a w-36 según el contenido real (números cortos, nombres largos, fechas, badges `rounded-full`).
+  * shrink-0 en avatares/badges circulares; flex-1 en la columna "Cliente" de las tablas (que en la real tiene dos líneas: nombre + ciudad/sub-texto).
+  * Responsive: `hidden md:block` / `hidden lg:block` en las skeletons de columnas que en la tabla real también están ocultas en mobile, para que el skeleton respete los mismos breakpoints.
+- Verificación: dev server OK (home=200, sin errores de compilación en /tmp/moinst-dev.log). `bun run lint`: 0 errores, 0 warnings.
+
+---
+Task ID: CRON-REVIEW-2
+Agent: main (cron webDevReview)
+Task: QA + dark mode + notificaciones globales + skeletons + parseo de archivos en chat IA
+
+Work Log:
+- QA con agent-browser: login ✓, navegación los 14 módulos (Panel, Agenda, Clientes, Presupuestos venta, Pedidos de venta, Instalaciones, Incidencias, Mantenimientos, Albaranes, Proveedores, Artículos, Presupuestos compra, Pedidos de compra, Ajustes). **0 errores runtime, 0 errores 500, 0 PrismaClientValidationError.** Estado ESTABLE, sin regresiones tras CRON-REVIEW-1.
+- Lanzados 2 subagentes en paralelo (CRON-2-A, CRON-2-B) sin conflictos de archivos.
+
+FEATURES NUEVAS:
+
+1. **Modo oscuro** (CRON-2-A):
+   - `src/components/providers.tsx`: `enableSystem={true}` (respeta prefers-color-scheme, permite override manual). CSS vars `.dark` ya existían en globals.css.
+   - `src/components/app/topbar.tsx`: `ThemeToggle` con `useTheme()` de next-themes, hidration-safe (placeholder disabled hasta `mounted`), icono Sun/Moon, `setTheme(isDark ? "light" : "dark")`.
+   - Verificado: click en toggle → `document.documentElement.className` cambia de "light" a "dark" ✓.
+
+2. **Panel de notificaciones global** (CRON-2-A):
+   - `src/components/app/notifications-bell.tsx` (nuevo): Popover con icono Bell, badge rojo con count total si > 0. `useQuery(['alerts'])` staleTime 60s (comparte cache con el badge del sidebar). 4 categorías clicables que navegan vía `useAppStore.getState().setView()`: Stock bajo→articles, Garantías a caducar→installations, Presupuestos sin respuesta→sale-quotes, Incidencias abiertas→incidents. Estados: vacío "Sin avisos", loading "Cargando avisos...".
+   - Wired en topbar.tsx: orden IA → ThemeToggle → NotificationsBell → LogOut.
+   - `/api/alerts` ya devolvía los 4 counts (de REV-1), sin cambios backend.
+
+3. **Skeletons de carga en 11 listados** (CRON-2-B):
+   - Cards-grid (6 placeholders): clients, installations, articles, suppliers, albaranes, incidents.
+   - Table rows (5 placeholders): sale-quotes, sale-orders, purchase-quotes, purchase-orders, maintenances.
+   - Cada skeleton matchea el layout real (grid cols, avatar + líneas para cards; columnas con mismas responsive breakpoints para tablas). Limpieza de imports `Loader2` no usados en 3 vistas read-only.
+
+4. **IA: parseo de archivos adjuntos en el chat** (implementado por main):
+   - `src/lib/ai/file-parse.ts` (nuevo): `parseAttachedFile(file)` soporta CSV (detecta delimiter , ; o tab), Excel (.xlsx/.xls vía lib `xlsx`), y texto plano. Devuelve `{ name, mimeType, rows, headers, textPreview }` con tabla markdown de hasta 40 filas. `buildAttachmentInstruction()` genera el bloque contextual para el LLM con instrucciones de proponer `set_article_price`/`create_article` por fila.
+   - `src/app/api/ai/chat/route.ts`: acepta JSON (sin archivo) o FormData multipart (con archivo). Si hay file (≤5MB), lo parsea e inyecta el contenido + instrucciones en el mensaje del usuario. Audit log registra `[Archivo: nombre]`. Respuesta incluye `fileName`.
+   - `src/components/app/ai-chat-panel.tsx`: `onFile` ahora guarda el File en estado `attachedFile` (muestra chip visual con nombre + tamaño + botón Quitar). `send()` construye FormData con message+history+file si hay adjunto. Placeholder cambia a "Describe qué hacer con el archivo...". Botón Send habilitado con archivo aunque input vacío. Display del mensaje usuario: "📎 filename — mensaje".
+   - Verificado: test directo de `parseAttachedFile` con CSV → 4 filas, headers [articulo,referencia,precio], tabla markdown correcta. E2E browser: CSV subido, chip "precios.csv" visible, POST /api/ai/chat 200 (7.6s), IA respondió "Voy a procesar el archivo de precios. Primero, consultaré si existen artículos con esos nombres..." (bucle agéntico activado, reconoció el contenido del archivo).
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un solo comando bash):
+- Login ✓, dashboard con chart recharts + stock card ✓.
+- Dark mode: light→dark ✓ (className verificado), screenshot guardado en `/home/z/my-project/download/moinst-dark-notifications.png`.
+- Notifications bell: abre popover con las 4 categorías ✓.
+- Clientes: navega, h1 "Clientes" ✓.
+- IA + CSV: chip de archivo visible, upload 200, IA procesa el contenido del archivo ✓.
+- Lint: 0 errores. Todos los endpoints responden 200/401.
+
+Stage Summary:
+- Estado: ESTABLE. 4 features nuevas (dark mode, notificaciones globales, skeletons en 11 vistas, parseo de archivos en chat IA). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El flujo de IA con CSV: la IA reconoce el archivo y planifica, pero en una sola ronda a veces no emite los json-action (necesita el bucle agéntico completo de 3 rondas + queries a la BD para mapear artículos por nombre). Mejora: aumentar MAX_ROUNDS o pre-procesar el CSV para extraer nombres y hacer el matching en el backend antes de llamar al LLM.
+  * Curl + NextAuth: la cookie de sesión no se captura con `-c` (limitación de curl con NextAuth v4 redirects). Para tests API autenticados, usar el browser (agent-browser) en vez de curl.
+  * Confirmación de acciones destructivas (delete): sigue sin diálogos de confirmación (low risk con 2 socios, pero bueno añadir).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.
+  * Screenshot de referencia: /home/z/my-project/download/moinst-dark-notifications.png.

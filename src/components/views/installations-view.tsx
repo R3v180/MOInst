@@ -27,6 +27,7 @@ import { formatDate, daysUntil } from "@/lib/format";
 import {
   Wrench, Plus, Search, Loader2, MapPin, Calendar, ShieldCheck, Siren, Filter,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 
 const STATUS_OPTIONS = [
@@ -146,8 +147,30 @@ export function InstallationsView() {
 
       {/* Lista */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4 flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="h-5 w-16 rounded-full shrink-0" />
+                </div>
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
+                <div className="mt-auto pt-3 border-t border-border flex items-center justify-between">
+                  <Skeleton className="h-3 w-32" />
+                  <Skeleton className="h-3 w-6" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : items.length === 0 ? (
         <EmptyState

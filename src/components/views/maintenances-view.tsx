@@ -16,7 +16,8 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatDate } from "@/lib/format";
-import { Wrench, Loader2, Filter, CalendarRange, User as UserIcon, X } from "lucide-react";
+import { Wrench, Filter, CalendarRange, User as UserIcon, X } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function MaintenancesView() {
   const { setView } = useAppStore();
@@ -164,9 +165,25 @@ export function MaintenancesView() {
 
       {/* Tabla */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="divide-y divide-border">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-32" />
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <Skeleton className="h-3 w-3" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-40" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <EmptyState
           icon={<Wrench className="w-6 h-6" />}

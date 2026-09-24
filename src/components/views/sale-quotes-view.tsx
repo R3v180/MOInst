@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { FileText, Plus, Search, Loader2, Users } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 
 const STATUS_OPTIONS = [
@@ -147,9 +148,25 @@ export function SaleQuotesView() {
 
       {/* Tabla */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="max-h-[70vh] overflow-y-auto scroll-thin divide-y divide-border">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-4 w-20" />
+                  <div className="flex-1 space-y-1">
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="hidden md:block h-4 w-24" />
+                  <Skeleton className="hidden lg:block h-4 w-24" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <EmptyState
           icon={<FileText className="w-6 h-6" />}

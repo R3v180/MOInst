@@ -11,7 +11,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ClipboardList, Search, Loader2 } from "lucide-react";
+import { ClipboardList, Search } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Todos los estados" },
@@ -110,9 +111,25 @@ export function SaleOrdersView() {
 
       {/* Tabla */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="max-h-[70vh] overflow-y-auto scroll-thin divide-y divide-border">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-4 w-24" />
+                  <div className="flex-1 space-y-1">
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-24" />
+                  </div>
+                  <Skeleton className="hidden md:block h-4 w-24" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="hidden lg:block h-4 w-8" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <EmptyState
           icon={<ClipboardList className="w-6 h-6" />}

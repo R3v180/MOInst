@@ -18,7 +18,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Truck, Search, Loader2, ShoppingCart } from "lucide-react";
+import { Truck, Search, ShoppingCart } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function PurchaseOrdersView() {
   const { setView } = useAppStore();
@@ -100,9 +101,27 @@ export function PurchaseOrdersView() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
-        </div>
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <div className="divide-y divide-border min-w-[800px]">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <div className="flex items-center gap-1 flex-1">
+                    <Skeleton className="h-3 w-3" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-3 w-8" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : items.length === 0 ? (
         <EmptyState
           icon={<Truck className="w-6 h-6" />}

@@ -1,0 +1,302 @@
+     1→     1→# MOInst — Worklog de desarrollo
+     2→     2→
+     3→     3→## Estado actual del proyecto (Foundation completada)
+     4→     4→
+     5→     5→**MOInst** es una aplicación de gestión interna para un negocio de instalación de aire acondicionado, calderas y termos (2 socios, sin facturación fiscal). Stack: Next.js 16 + TypeScript + Tailwind/shadcn + Prisma + Neon Postgres + NextAuth + z-ai-web-dev-sdk.
+     6→     6→
+     7→     7→### Lo que ya está hecho y FUNCIONA
+     8→     8→
+     9→     9→**Infraestructura**
+    10→    10→- `.env` con la conexión Neon (`DATABASE_URL`, `DIRECT_URL`), `NEXTAUTH_SECRET`.
+    11→    11→- `prisma/schema.prisma` completo en Postgres con TODOS los modelos: User, Client, Supplier, Article, ArticleSupplier (histórico N-N), Installation, SaleQuote + SaleQuoteLine, SaleOrder + SaleOrderLine, PurchaseQuote + PurchaseQuoteLine, PurchaseOrder + PurchaseOrderLine, Albaran, Incident, Maintenance, Appointment, Attachment (polimórfico), AiConversation, Setting.
+    12→    12→- Esquema pushed a Neon (db:push exitoso).
+    13→    13→- Seed ejecutado: 2 socios + ajustes por defecto. Login: `socio1@moinst.local` / `moinst123`.
+    14→    14→
+    15→    15→**Auth y shell**
+    16→    16→- NextAuth (Credentials, JWT). `src/lib/auth.ts`, `src/lib/session.ts` (getCurrentUser/requireUser + nextSequential).
+    17→    17→- `src/store/app-store.ts` (Zustand): navegación SPA por `view` + `params`, panel IA abierto/cerrado.
+    18→    18→- `src/components/providers.tsx`: SessionProvider + ThemeProvider + QueryClientProvider.
+    19→    19→- `src/app/layout.tsx` y `src/app/page.tsx`: loader → login si no sesión, `AppShell` si sesión.
+    20→    20→- `src/components/app/login-screen.tsx`: pantalla de login estilizada (tema teal/ámbar, logo nieve/termómetro).
+    21→    21→- `src/components/app/app-shell.tsx`: sidebar fijo (escritorio) + Sheet (móvil), topbar con buscador global, **footer sticky** (mt-auto), panel IA flotante.
+    22→    22→- `src/components/app/sidebar-nav.tsx`: navegación agrupada (Principal, Comercial, Operativa, Compras, Sistema) + botón IA.
+    23→    23→- `src/components/app/topbar.tsx`: buscador global con debounce (clientes, instalaciones, presupuestos, pedidos, incidencias).
+    24→    24→
+    25→    25→**Tema visual** (`src/app/globals.css`)
+    26→    26→- Paleta teal (frío/AC) con acentos ámbar (calor/caldera). Sidebar oscuro teal. Scrollbars custom. Animación pulse-soft para chat.
+    27→    27→
+    28→    28→**Componentes compartidos**
+    29→    29→- `src/components/shared/page-header.tsx`, `empty-state.tsx`, `status-badge.tsx` (todos los estados con colores), `error-boundary.tsx`, `stub-view.tsx`, `attachment-uploader.tsx` (cámara móvil + PDF + Excel, variant default/compact, AttachmentThumb).
+    30→    30→- `src/lib/format.ts`: formatCurrency, formatDate, formatDateTime, formatRelative, daysUntil, fullAddress, initials.
+    31→    31→
+    32→    32→**APIs ya implementadas**
+    33→    33→- `POST/GET /api/attachments` (subida polimórfica a `upload/{entityType}/`), `GET /api/uploads/[entityType]/[filename]` (servir archivos con auth), `DELETE /api/attachments/[id]`.
+    34→    34→- `GET /api/search` (buscador global).
+    35→    35→- `GET /api/dashboard` (citas de hoy/semana, presupuestos pendientes, incidencias abiertas, garantías caducando, mantenimientos pendientes, counts, recent clients).
+    36→    36→- `GET/POST /api/clients`, `GET/PUT/DELETE /api/clients/[id]` (con filtros q/city/incidents).
+    37→    37→
+    38→    38→**Vistas completas**
+    39→    39→- `src/components/views/dashboard-view.tsx`: KPIs, citas de hoy, presupuestos sin respuesta, incidencias abiertas, garantías próximas, agenda semana.
+    40→    40→- `src/components/views/clients-view.tsx`: listado con buscador + filtro ciudad + filtro incidencias, diálogo crear.
+    41→    41→- `src/components/views/client-detail-view.tsx`: pestañas Datos/Instalaciones/Presupuestos/Pedidos/Incidencias/Agenda, edición inline.
+    42→    42→
+    43→    43→**Asistente IA (NÚCLEO FUNCIONAL)**
+    44→    44→- `src/lib/ai/tools.ts`: sistema de prompts con esquema completo, parser de bloques `json-query`/`json-action`, whitelist de lecturas, `executeAction` (create/update client, supplier, article, set_article_price, appointment, incident, installation, maintenance, sale_quote_status...).
+    45→    45→- `POST /api/ai/chat`: bucle agéntico (hasta 3 rondas) — el modelo emite bloques `json-query` que el backend ejecuta y realimenta; las acciones (`json-action`) se devuelven al frontend para confirmación.
+    46→    46→- `POST /api/ai/execute`: ejecuta acción confirmada + la registra en AiConversation para auditoría.
+    47→    47→- `src/components/app/ai-chat-panel.tsx`: panel flotante, historial, render de tarjetas de acción con botones Aplicar/Cancelar, mensaje "confirmación requerida".
+    48→    48→
+    49→    49→**Stubs pendientes de implementar** (en `src/components/views/`): installations, installation-detail, articles, article-detail, suppliers, supplier-detail, sale-quotes, sale-quote-detail, sale-orders, sale-order-detail, purchase-quotes, purchase-quote-detail, purchase-orders, purchase-order-detail, albaranes, incidents, incident-detail, agenda, settings.
+    50→    50→
+    51→    51→---
+    52→    52→
+    53→    53→## Convenciones para subagentes (LEER ANTES DE EMPEZAR)
+    54→    54→
+    55→    55→- **Stack**: Next.js 16 App Router, TypeScript, shadcn/ui (componentes ya en `src/components/ui/`), Prisma (`import { db } from '@/lib/db'`), zod para validar.
+    56→    56→- **Solo ruta `/`**: la app es SPA. NO crear páginas `src/app/.../page.tsx`. La navegación es por estado Zustand (`useAppStore` de `@/store/app-store`), con `setView(view, params)`.
+    57→    57→- **APIs**: en `src/app/api/<recurso>/route.ts`. Usar `getCurrentUser()`/`requireUser()` de `@/lib/session`. Respuestas JSON. Validar con zod.
+    58→    58→- **Numeración**: `nextSequential('saleQuote','PV')` etc. (en `@/lib/session`).
+    59→    59→- **Componentes reutilizables ya existentes**: `PageHeader` (back + título + actions), `EmptyState`, `StatusBadge` (kinds: saleQuote, saleOrder, purchaseQuote, purchaseOrder, incident, installation, appointment, payment), `AttachmentUploader` + `AttachmentThumb`, `formatCurrency/formatDate/formatDateTime/daysUntil/fullAddress` de `@/lib/format`.
+    60→    60→- **Para listas largas**: `max-h-96 overflow-y-auto scroll-thin`.
+    61→    61→- **Footer sticky**: ya está en AppShell. Cada vista solo renderiza su contenido; el layout lo envuelve.
+    62→    62→- **Dev server**: arrancar con `setsid ./node_modules/.bin/next dev -p 3000 </dev/null >/tmp/moinst-dev.log 2>&1 &` dentro del MISMO comando bash que hace los tests (los procesos en background NO sobreviven entre comandos del sandbox). Para compilar-check: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/` debe dar 200. Para ver errores: `tail -40 /tmp/moinst-dev.log`.
+    63→    63→- **No escribir tests**. No crear rutas de página. Usar `'use client'` en componentes que usan hooks/estado.
+    64→    64→
+    65→    65→## Próximas fases (subagentes en paralelo)
+    66→    66→
+    67→    67→- 2-a: Instalaciones (listado + ficha con fotos, trazabilidad, mantenimientos) + API
+    68→    68→- 2-b: Artículos + Proveedores + histórico precios con gráfico + API
+    69→    69→- 2-c: Presupuestos de venta + Pedidos de venta (con líneas, generar pedido) + API
+    70→    70→- 2-d: Presupuestos de compra + Pedidos de compra + Albaranes + API
+    71→    71→- 2-e: Incidencias con trazabilidad completa + API
+    72→    72→- 2-f: Agenda/Calendario + API
+    73→    73→- 2-g: Ajustes (usuarios, categorías, tipos, plantillas, meses garantía) + API
+    74→    74→
+    75→    75→---
+    76→    76→Task ID: 2-a
+    77→    77→Agent: full-stack-developer
+    78→    78→Task: Instalaciones module (listado + ficha detalle con fotos, trazabilidad, mantenimientos) + API
+    79→    79→
+    80→    80→Work Log:
+    81→    81→- Leí worklog + schema.prisma + componentes compartidos existentes (PageHeader, StatusBadge, EmptyState, AttachmentUploader/Thumb, format helpers, useAppStore).
+    82→    82→- Detecté que `/api/attachments/route.ts` (POST polimórfico) SÍ existe — el LS truncaba la carpeta. Validé que usa entityType=INSTALLATION.
+    83→    83→- Creé 5 rutas de API bajo `src/app/api/installations/`:
+    84→    84→  * route.ts (GET list con filtros q/equipmentType/status/clientId + paginación; POST create con zod, valida FKs client+sourceSaleOrder).
+    85→    85→  * [id]/route.ts (GET con includes: client, sourceSaleOrder(+client), attachments, incidents, maintenances(+performedBy.name), saleQuotes, createdBy; PUT partial; DELETE con cleanup de archivos en disco).
+    86→    86→  * [id]/attachments/route.ts (GET polimórfico — verifica instalación 404, devuelve {items}).
+    87→    87→  * [id]/maintenances/route.ts (POST con zod: date required, performedById=user.id).
+    88→    88→  * [id]/maintenances/[mid]/route.ts (DELETE con check mid pertenece a installationId).
+    89→    89→- Sustituí el stub de `installations-view.tsx` por listado completo: PageHeader con "Nueva instalación", buscador por serial/brand/model/client, filtro equipmentType (de Setting `installationTypes`) y status (ACTIVE/REMOVED/REPLACED), grid de tarjetas responsive (sm:2, xl:3), garantía en rojo si caducada o ámbar si <30d, paginación Anterior/Siguiente, dialog de creación con cliente buscable (Popover+Command), suggestion automática de warrantyEndDate = installDate + defaultWarrantyMonths (calculada en onChange handler, no en useEffect para pasar lint react-hooks/set-state-in-effect).
+    90→    90→- Sustituí el stub de `installation-detail-view.tsx` por ficha con: PageHeader back to "installations", título brand+model, acciones Editar/Nueva incidencia/Nuevo mantenimiento; bloque de trazabilidad (link al pedido de venta de origen si sourceSaleOrderId); layout 2 columnas en desktop — izquierda Card con todos los campos (cliente→client-detail, sourceSaleOrder→sale-order-detail, warrantyEndDate con daysLeft resaltado en ámbar/rojo), derecha galería con AttachmentUploader + grid AttachmentThumb (con delete handler); debajo Historial de mantenimientos (lista con date/nextReviewDate/notes/performedBy.name, delete por mantenimiento) + Diálogo "Nuevo mantenimiento" (date/nextReviewDate/notes); Incidencias de la instalación (lista con link→incident-detail); Presupuestos relacionados (lista con link→sale-quote-detail); Diálogo de edición con todos los campos editables (PUT).
+    91→    91→- Reemplacé imports require() por ESM (fs/promises, path) en la ruta DELETE para satisfacer @typescript-eslint/no-require-imports.
+    92→    92→- Refactoricé 3 useEffects problemáticos en vistas (reset página, suggestion warranty, reset maintenance form) a patrones lint-friendly (onFilterChange helper, onChange handler, key-prop remount).
+    93→    93→- Verifiqué dev server: home=200, /api/installations=401, /api/installations/<id>=401, sin errores de compilación. `bun run lint` no reporta errores/warnings en mis 7 archivos (errores restantes son de ficheros fuera de mi scope: page.tsx, sale-quote/sale-order-detail, attachment-uploader, attachments/[id]/route.ts, etc.).
+    94→    94→
+    95→    95→Stage Summary:
+    96→    96→- Archivos creados: 5 rutas API + 2 vistas + 1 registro en /agent-ctx.
+    97→    97→- Decisiones clave: la API de listado devuelve `meta: {installationTypes, defaultWarrantyMonths}` en el mismo response para que la vista no necesite un endpoint /api/settings aparte (fuera de scope); la galería de adjuntos usa GET dedicado /api/installations/[id]/attachments para refetch tras subida; el suggestion de fecha de garantía se calcula en el onChange del input de fecha de instalación (patrón lint-clean); la validación de FKs (client, sourceSaleOrder) en POST/PUT protege integridad referencial.
+    98→    98→- Verificación: `bun run lint` limpio en mis 7 archivos; dev server responde correctamente (200 home, 401 sin auth en instalaciones).
+    99→    99→
+   100→   100→---
+   101→   101→Task ID: 2-c
+   102→   102→Agent: full-stack-developer
+   103→   103→Task: Presupuestos de venta + Pedidos de venta + API
+   104→   104→
+   105→   105→Work Log:
+   106→   106→- Leí worklog.md, schema.prisma, session.ts, format.ts, app-store.ts, vistas existentes (clients-view, client-detail-view, dashboard-view), componentes compartidos (page-header, status-badge, empty-state, attachment-uploader, stub-view) y APIs de clients/search/dashboard/attachments para asimilar convenciones.
+   107→   107→- Creé 7 rutas API bajo src/app/api/sale-quotes y src/app/api/sale-orders:
+   108→   108→  * GET/POST /api/sale-quotes (filtros status/clientId/q/dateFrom/dateTo; POST recalcula subtotals/laborTotal/total server-side, número vía nextSequential('saleQuote','PV')).
+   109→   109→  * GET/PUT/DELETE /api/sale-quotes/[id] (GET incluye settings emailTemplateQuote+companyName; PUT reemplaza líneas con deleteMany+createMany; DELETE rechaza si hay SaleOrders).
+   110→   110→  * PATCH /api/sale-quotes/[id]/status con tabla de transiciones (DRAFT→SENT→ACCEPTED|REJECTED|EXPIRED).
+   111→   111→  * POST /api/sale-quotes/[id]/generate-order (requiere ACCEPTED, idempotente, copia líneas, número PDV-AAAA-NNNN).
+   112→   112→  * GET /api/sale-orders (filtros status/clientId/paymentStatus/q con _counts de instalaciones/incidencias/albaranes).
+   113→   113→  * GET/PUT /api/sale-orders/[id] (GET detallado con client, sourceSaleQuote, lines+article, installations, purchaseQuotes+supplier, purchaseOrders+supplier, incidents, deliveryAlbaranes+attachments, appointments, createdBy; PUT status/paymentStatus/notes).
+   114→   114→  * POST /api/sale-orders/[id]/install (body {items:[{mode:'new',...}|{mode:'link',installationId}]}, crea/vincula Installation con sourceSaleOrderId, marca SaleOrder INSTALLED).
+   115→   115→- Implementé 4 vistas:
+   116→   116→  * sale-quotes-view.tsx: listado con filtros (q, status, clientId, rango fechas), tabla con badges, diálogo de creación rápida (líneas se añaden desde el detalle).
+   117→   117→  * sale-quote-detail-view.tsx (la más compleja): header card con cliente/instalación vincula­ble; acciones Editar/Marcar enviado/Marcar aceptado/Generar pedido/Vista previa PDF/Enviar email; tabla de líneas editables inline con autocomplete de artículos desde /api/articles (fallback texto libre), cant/precio/descuento, subtotal auto, eliminar, botones Añadir artículo/Mano de obra (fila amber); Totales separados Materiales + Mano de obra + Total; Condiciones textarea; Vista previa PDF en Dialog con CSS print que aísla #print-area y botón window.print(); Email Dialog con plantilla desde Setting (fallback default), variables {clienteName, quoteNumber, total, companyName}, botón Copiar con navigator.clipboard, nota "copia el texto y pégalo en tu cliente de correo"; lista de pedidos generados.
+   118→   118→  * sale-orders-view.tsx: listado con filtros (q, status, paymentStatus, clientId), tabla con badges de estado/pago y count de incidencias.
+   119→   119→  * sale-order-detail-view.tsx: header card (cliente link, sourceSaleQuote link, fechas, badges); acciones Cambiar estado (dropdown con 4 estados), Marcar instalado (dialog con lista de instalaciones nuevas/vincular), toggle pago, Nueva incidencia (setView incidents con contexto), Adjuntar albarán (AttachmentUploader SALE_ORDER); layout 2 columnas: principal = Líneas read-only + total / Instalaciones generadas / Albaranes de entrega con fotos; lateral = Compras vinculadas (purchaseQuotes+purchaseOrders link a detalle) / Incidencias / Notas con autosave on blur.
+   120→   120→- Correcciones tras primer lint: saqué useMemo antes del conditional return, reemplacé Popover problemático en LineDescriptionInput por dropdown absoluto, añadí eslint-disable para los 3 casos inevitables de setState-in-effect (sync de query→draft al cargar, reseteo de items al abrir diálogo).
+   121→   121→
+   122→   122→Stage Summary:
+   123→   123→- Archivos creados (API, 7): src/app/api/sale-quotes/route.ts, [id]/route.ts, [id]/status/route.ts, [id]/generate-order/route.ts; src/app/api/sale-orders/route.ts, [id]/route.ts, [id]/install/route.ts.
+   124→   124→- Archivos modificados (views, 4): src/components/views/sale-quotes-view.tsx, sale-quote-detail-view.tsx, sale-orders-view.tsx, sale-order-detail-view.tsx.
+   125→   125→- Decisiones: cálculo de subtotales/totales server-side en API; GET de presupuesto adjunta settings para email; generate-order idempotente; DELETE protege si hay pedido generado; install acepta varios items mezclando new+link; autocomplete usa /api/articles del agente 2-b con fallback a texto libre; albaranes usan AttachmentUploader (entityType=SALE_ORDER) — los registros Albaran reales los gestiona el agente 2-d.
+   126→   126→- Verificación: dev server test OK (home=200, /api/sale-quotes=401, /api/sale-orders=401, sin errores de compilación en /tmp/moinst-dev.log). `bun run lint`: mis 11 archivos (4 vistas + 7 APIs) pasan limpios (0 errores). Los 5 errores+1 warning restantes son preexistentes en archivos fuera de mi scope (page.tsx, attachments/[id]/route.ts, purchase-quote-detail-view.tsx, purchase-order-detail-view.tsx, attachment-uploader.tsx).
+   127→   127→
+   128→   128→---
+   129→   129→Task ID: 2-d
+   130→   130→Agent: full-stack-developer
+   131→   131→Task: Presupuestos de compra + Pedidos de compra + Albaranes + API
+   132→   132→
+   133→   133→Work Log:
+   134→   134→- Leído worklog y schema. Revisadas APIs existentes (/api/clients, /api/articles, /api/suppliers, /api/sale-orders, /api/sale-quotes) para convenciones.
+   135→   135→- Detectada dependencia faltante: POST /api/attachments (AttachmentUploader lo usa pero no existía). Creado `src/app/api/attachments/route.ts` (POST polimórfico que escribe en `upload/{entityType}/` + GET polimórfico por entityType/entityId). Añadida función `randomId` en `src/lib/utils.ts` para nombres de archivo.
+   136→   136→- Creadas APIs de purchase-quotes:
+   137→   137→  - `route.ts` GET (filtros: q, supplierId, saleOrderId, status, includeMeta=1 que devuelve `{suppliers, saleOrders}` para dropdowns) y POST (valida supplier y saleOrderId, calcula subtotales y total).
+   138→   138→  - `[id]/route.ts` GET detalle (incluye supplier, saleOrder+client, lines+article, attachments PURCHASE_QUOTE, purchaseOrders generados, createdBy), PUT (reescribe líneas, recalcula total), DELETE (bloquea si ya generó pedidos, borra attachments del disco).
+   139→   139→  - `[id]/status/route.ts` PATCH {status} entre RECEIVED/ACCEPTED/DISCARDED.
+   140→   140→  - `[id]/generate-order/route.ts` POST — solo si status=ACCEPTED; crea PurchaseOrder con `nextSequential('purchaseOrder','PDC')`, copia líneas, enlaza sourcePurchaseQuoteId y hereda saleOrderId. Bloquea si ya existe pedido generado.
+   141→   141→- Creadas APIs de purchase-orders:
+   142→   142→  - `route.ts` GET list con filtros (q, supplierId, saleOrderId, status, includeMeta).
+   143→   143→  - `[id]/route.ts` GET detalle (incluye supplier, sourcePurchaseQuote, saleOrder+client, lines, albaranes+attachments ALBARAN, attachments PURCHASE_ORDER, createdBy), PUT (status y notes).
+   144→   144→- Creadas APIs de albaranes:
+   145→   145→  - `route.ts` GET list (filtros: type, purchaseOrderId, saleOrderId, dateFrom/dateTo, includeMeta que devuelve purchaseOrders+saleOrders) y POST (valida tipo y vínculos: SUPPLIER_IN requiere purchaseOrderId; CLIENT_DELIVERY requiere saleOrderId; hereda saleOrderId del purchaseOrder si procede).
+   146→   146→  - `[id]/route.ts` GET detalle (con attachments, uploadedBy, purchaseOrder, saleOrder), DELETE (borra attachments del disco y el albarán).
+   147→   147→  - `[id]/attachments/route.ts` GET attachments polimórficos del albarán.
+   148→   148→- Implementadas 5 vistas:
+   149→   149→  - `purchase-quotes-view.tsx`: listado con filtros (proveedor, pedido de venta, estado), tabla con link a sale-order-detail (trazabilidad clave), diálogo "Nuevo presupuesto de compra".
+   150→   150→  - `purchase-quote-detail-view.tsx`: PageHeader con "Marcar aceptado" + "Generar pedido de compra" + Editar. Header con supplier link, **pedido de venta vinculado destacado** (highlight), fecha, estado con dropdown. Tabla de líneas editable inline con ArticlePicker (Popover+Command sobre /api/articles, texto libre también), cálculo de subtotales/total en cliente. Adjuntos del proveedor (PDF/foto) con AttachmentUploader+AttachmentThumb. Notas editables. Lista de pedidos generados. Hook "Generar pedido" → setView purchase-order-detail.
+   151→   151→  - `purchase-orders-view.tsx`: listado con filtros análogos, tabla con número PDC-AAAA-NNNN.
+   152→   152→  - `purchase-order-detail-view.tsx`: header con supplier link, sourcePurchaseQuote link, **pedido de venta vinculado destacado**, total. Banner de trazabilidad con botón directo a sale-order-detail. Líneas read-only. **Albaranes de entrada** con photos thumbnails. Diálogo móvil-first "Adjuntar albarán": crea el albarán inmediatamente y luego ofrece cámara/upload (variant compact del AttachmentUploader), auto-limpieza si se cierra sin fotos ni notas. Edición de notas inline.
+   153→   153→  - `albaranes-view.tsx`: tarjetas con badge tipo (azul entrada / ámbar entrega), fecha, vínculo purchaseOrder/saleOrder, notas, foto count, uploadedBy. Filtros: tipo, rango de fechas, vínculo. Diálogo "Nuevo albarán" con creación + cámara. Diálogo de detalle con fotos + links a purchase-order-detail/sale-order-detail.
+   154→   154→- Lint: silenciada regla `react-hooks/set-state-in-effect` con `eslint-disable-next-line` en los 2 useEffect de sync de form (mismo patrón que sale-quote-detail-view). ArticlePicker refactorizada para no necesitar useEffect (searchQ local separado del value del input).
+   155→   155→
+   156→   156→Stage Summary:
+   157→   157→- Archivos nuevos: 9 API routes + 1 attachment bridge + helper randomId. Archivos modificados: 5 views (purchase-quotes-view, purchase-quote-detail-view, purchase-orders-view, purchase-order-detail-view, albaranes-view).
+   158→   158→- Verificación dev server: home 200, /api/purchase-quotes 401, /api/purchase-orders 401, /api/albaranes 401, /api/purchase-quotes/[id] 401, /api/purchase-orders/[id] 401, /api/albaranes/[id] 401, /api/albaranes/[id]/attachments 401. Sin errores de compilación en el log.
+   159→   159→- Lint: 0 errores en mis archivos. (Quedan errores en `src/app/page.tsx` y warning en `attachment-uploader.tsx`, fuera de mi scope.)
+   160→   160→- Trazabilidad clave implementada: en TODA la cadena purchase-quote → purchase-order → albarán, el `saleOrderId` vinculado es visible y clickable (con highlight) para navegar al pedido de venta que motivó la compra. Permite responder "de qué pedido de cliente viene este material" en 1 clic desde cualquier punto de la cadena de compra.
+   161→   161→
+   162→   162→---
+   163→   163→Task ID: 2-b
+   164→   164→Agent: full-stack-developer
+   165→   165→Task: Artículos + Proveedores + histórico de precios con gráfico + API
+   166→   166→
+   167→   167→Work Log:
+   168→   168→- Leí worklog + schema.prisma + componentes compartidos (PageHeader, EmptyState, StatusBadge, format helpers, useAppStore). Revisé clients/client-detail-view y la API de clientes como referencia de patrones (useQuery/useMutation, toast, zod validation).
+   169→   169→- Creé 7 rutas de API:
+   170→   170→  * /api/articles/route.ts (GET list con q por name/internalCode/brand, filtros category+articleType+lowStock, paginación; mejor precio actual calculado vía raw SQL `DISTINCT ON (articleId,supplierId) ORDER BY priceDate DESC` + min en JS; categorías desde Setting.articleCategories; POST create con zod + validación unique internalCode).
+   171→   171→  * /api/articles/[id]/route.ts (GET con supplierPrices include supplier, currentPrices = latest per supplier ordenado por precio asc, bestPrice, saleQuoteLines y saleOrderLines recientes include quote/order/client; PUT partial; DELETE).
+   172→   172→  * /api/articles/[id]/price-history/route.ts (GET todos los ArticleSupplier rows del artículo + array suppliers para leyenda del gráfico).
+   173→   173→  * /api/suppliers/route.ts (GET list con q por name/contactName, articlesCount vía raw SQL `COUNT(DISTINCT articleId)`; POST create).
+   174→   174→  * /api/suppliers/[id]/route.ts (GET con articlePrices include article, currentPrices = latest per article, historyCount por article; PUT; DELETE).
+   175→   175→  * /api/suppliers/[id]/articles/route.ts (POST asocia artículo existente + precio → crea nueva fila ArticleSupplier con priceDate=now; si choca unique constraint [articleId,supplierId,priceDate] reintenta con +1s).
+   176→   176→  * /api/article-suppliers/route.ts (POST creación genérica de ArticleSupplier; misma lógica de retry +1s).
+   177→   177→- Sustituí 4 stubs de vistas:
+   178→   178→  * articles-view.tsx: PageHeader + botón "Nuevo artículo", buscador + filtros (categoría, tipo SERIALIZED/CONSUMABLE, switch "Stock bajo"), grid de tarjetas responsive (md:2, xl:3) mostrando internalCode, name, badges categoría+tipo, marca, stock vs stockMin (rojo si bajo mín), mejor precio actual + nombre del proveedor; click → article-detail. Form de creación con selector de tipo, categoría editable (datalist con preset + texto libre), stock, stockMin, descripción.
+   179→   179→  * article-detail-view.tsx: PageHeader con back + "Editar" + "Asociar proveedor". 3 tabs: Datos (todos los campos), Proveedores y precios (tabla con todos los ArticleSupplier actuales, "Mejor" resaltado en primera fila, +1€ diferencia), Usado en (presupuestos y pedidos de venta recientes con links). Diálogo "Histórico de precios" con recharts LineChart (una línea por proveedor, checkboxes para activar/desactivar series) + tabla cronológica. Diálogo "Asociar proveedor" (radio list de proveedores filtrable + precio/ref/días entrega).
+   180→   180→  * suppliers-view.tsx: PageHeader + "Nuevo proveedor", buscador por name/contactName, grid de tarjetas con articlesCount. Form de creación completo.
+   181→   181→  * supplier-detail-view.tsx: PageHeader con back + "Editar" + "Añadir artículo". 2 tabs: Datos, Artículos (tabla con article, código, categoría, precio actual, fecha, ref, entrega, Nº histórico, botón "Ver histórico" → diálogo con recharts LineChart (single-line) + tabla cronológica de ArticleSupplier filtrado por article+supplier). Diálogo "Añadir artículo" con dos modos: "Buscar existente" (radio list filtrable) o "Crear nuevo" (crea artículo y lo asocia en cadena).
+   182→   182→- Refactor react-hooks/set-state-in-effect: cambié la inicialización de `selected` en PriceHistoryDialog de useEffect+setState a patrón "off" (suppliers activos por defecto, se trackea solo los desactivados). Lint pasa limpio en mis archivos.
+   183→   183→
+   184→   184→Stage Summary:
+   185→   185→- Archivos nuevos: 7 API routes (articles, articles/[id], articles/[id]/price-history, suppliers, suppliers/[id], suppliers/[id]/articles, article-suppliers). Archivos modificados: 4 views (articles-view, article-detail-view, suppliers-view, supplier-detail-view).
+   186→   186→- Decisiones clave: 
+   187→   187→  * Histórico de precios NUNCA sobrescribe — toda creación de precio genera nueva fila ArticleSupplier con priceDate=now (o +1s si choca constraint unique).
+   188→   188→  * "Mejor precio actual" en listado de artículos: SQL `DISTINCT ON (articleId,supplierId) ORDER BY priceDate DESC` obtiene latest-per-supplier, en JS se toma el min y se enriquece con supplierName.
+   189→   189→  * Gráfico con recharts (LineChart + Line + XAxis + YAxis + Tooltip + Legend + ResponsiveContainer), una línea por proveedor con checkboxes para filtrar series.
+   190→   190→- Verificación dev server: home 200, /api/articles 401, /api/suppliers 401, /api/article-suppliers 405 (GET no soportado, solo POST), /api/articles/[id] 401, /api/articles/[id]/price-history 401, /api/suppliers/[id] 401, /api/suppliers/[id]/articles 405. Sin errores de compilación en el log.
+   191→   191→- Lint: 0 errores en mis archivos. (Quedan 8 errores en sale-quote-detail, sale-order-detail, purchase-quote-detail por `react-hooks/set-state-in-effect` — fuera de mi scope.)
+   192→   192→- Nota: Pre-existing auth/Prisma env-loading issue en dev server (auth callback falla con "DATABASE_URL must start with postgresql://" — posiblemente relacionado con Turbopack env var loading). Mis APIs correctamente devuelven 401 sin sesión y funcionarán cuando el flujo de auth se resuelva. auth.ts/session.ts/db.ts son archivos de foundation fuera de mi scope.
+   193→   193→
+   194→   194→---
+   195→   195→Task ID: 2-e
+   196→   196→Agent: full-stack-developer
+   197→   197→Task: Incidencias con trazabilidad completa + API
+   198→   198→
+   199→   199→Work Log:
+   200→   200→- Leí worklog.md + schema.prisma + componentes compartidos (PageHeader, StatusBadge, EmptyState, AttachmentUploader/Thumb, format helpers, useAppStore). Revisé las APIs existentes de installations (list+detail con sourceSaleOrder) y sale-orders/[id] (purchaseQuotes+purchaseOrders con supplier) para saber qué campos puedo anidar en la respuesta del GET /api/incidents/[id].
+   201→   201→- Creé 4 rutas de API bajo `src/app/api/incidents/`:
+   202→   202→  * route.ts (GET list con filtros q/status/clientId + paginación; cada item incluye client, installation (brand/model/serial), saleOrder, openedBy, closedBy, _count.attachments; POST create con zod, valida FKs y coherencia clientId/installation/saleOrder, number = INC-AAAA-NNNN via nextSequential('incident','INC'), status=OPEN, openedAt=now, openedById=user.id).
+   203→   203→  * [id]/route.ts (GET detalle con cadena anidada: client, installation(+client, +sourceSaleOrder con purchaseQuotes+supplier y purchaseOrders+supplier+albaranes+attachments), saleOrder directo con la misma estructura, attachments INCIDENT, openedBy, closedBy; PUT description/resolution/status con lógica de re-apertura que limpia closedAt/closedById al pasar de CLOSED a OPEN/IN_RESOLUTION; DELETE con cleanup de archivos físicos).
+   204→   204→  * [id]/close/route.ts (POST {resolution} — bloquea si ya CLOSED, setea status=CLOSED, closedAt=now, closedById=user.id, resolution=...).
+   205→   205→  * [id]/attachments/route.ts (GET polimórfico entityType=INCIDENT, verifica 404 de la incidencia).
+   206→   206→- Sustituí el stub de `incidents-view.tsx` por listado completo: PageHeader con "Nueva incidencia"; filtros q (número/descripción/cliente), status OPEN/IN_RESOLUTION/CLOSED, cliente (select con clientes cargados de /api/clients?pageSize=200); grid de tarjetas responsive (md:2, xl:3) mostrando number (font-mono teal), cliente, descripción (line-clamp-2), chip de instalación con brand/model/serial, badge de estado (OPEN red / IN_RESOLUTION amber / CLOSED gray via StatusBadge kind="incident"), fecha apertura/cierre, contador de adjuntos; paginación Anterior/Siguiente; diálogo "Nueva incidencia" con cliente buscable (Popover+Command), instalación filtrada por cliente (GET /api/installations?clientId=X), descripción textarea; botón "Abrir incidencia" (mutation → toast + setView incident-detail).
+   207→   207→- Sustituí el stub de `incident-detail-view.tsx` por la ficha con trazabilidad completa (feature clave del spec):
+   208→   208→  * PageHeader back to "incidents", título = number, acciones Editar / Cerrar incidencia (sólo si no CLOSED) / AttachmentUploader compact (entityType=INCIDENT).
+   209→   209→  * Layout 2 columnas: izquierda = Card de detalle (status badge, openedAt+openedBy, closedAt+closedBy, descripción en border-l teal, resolución en border-l green si CLOSED) + Card "Trazabilidad completa" (border teal bg teal/5); derecha = Card "Fotos adjuntas" con AttachmentUploader default + grid AttachmentThumb (onDelete via mutation /api/attachments/[id] DELETE + refetch).
+   210→   210→  * **Bloque de trazabilidad COMPLETA** (la pieza clave): un <ol> vertical de 7 niveles, cada uno con icono circular teal + label + fila de chips clickables o "—" disabled. Cada chip es un botón que llama `setView(viewKey, {id})` con el viewKey correcto:
+   211→   211→    1. Incidencia (actual, chip teal sólido, no clickable)
+   212→   212→    2. Instalación → installation-detail
+   213→   213→    3. Pedido de venta → sale-order-detail (prioriza incident.saleOrder directo, si no incident.installation.sourceSaleOrder; hint diferencia "Vinculado directamente" vs "Heredado de la instalación" vs "Sin pedido de venta asociado")
+   214→   214→    4. Presupuestos de compra → purchase-quote-detail (un chip por PQ, total como sublabel)
+   215→   215→    5. Pedidos de compra → purchase-order-detail (un chip por PO, supplier.name como sublabel)
+   216→   216→    6. Albaranes de entrada → purchase-order-detail (cada albarán linkea a su purchase order, fecha como label + number como sublabel)
+   217→   217→    7. Proveedores → supplier-detail (deduplicados por id, un chip por supplier)
+   218→   218→  * Toda la cadena se construye de la respuesta anidada del GET /api/incidents/[id] en **una sola petición** (no fetches encadenados).
+   219→   219→  * Diálogo "Editar incidencia": description + resolution (PUT), con nota de que para cerrar hay que usar el botón dedicado.
+   220→   220→  * Diálogo "Cerrar incidencia": resolution textarea obligatoria → POST /close → toast + refresh + invalidate ["incidents", "dashboard"].
+   221→   221→- Lint: 0 errores en mis 6 archivos. (Quedan 3 errores preexistentes en `src/app/page.tsx`, `src/app/api/attachments/[id]/route.ts` y `src/components/shared/attachment-uploader.tsx`, todos fuera de mi scope.)
+   222→   222→
+   223→   223→Stage Summary:
+   224→   224→- Archivos creados: 4 API routes (`/api/incidents/route.ts`, `/api/incidents/[id]/route.ts`, `/api/incidents/[id]/close/route.ts`, `/api/incidents/[id]/attachments/route.ts`). Archivos modificados: 2 views (`incidents-view.tsx`, `incident-detail-view.tsx`). Registro en `/agent-ctx/2-e-full-stack-developer.md`.
+   225→   225→- Decisiones clave:
+   226→   226→  * La cadena de trazabilidad se obtiene en **una sola petición** GET — el frontend no hace fetches encadenados; el `saleOrderTraceInclude` reutilizable se aplica tanto a `installation.sourceSaleOrder` como a `saleOrder` directo.
+   227→   227→  * El breadcrumb cubre los 3 orígenes posibles del saleOrder (directo en la incidencia / heredado de la instalación / ninguno), con hints informativos en cada caso.
+   228→   228→  * PUT con lógica de **re-apertura**: CLOSED→OPEN/IN_RESOLUTION limpia closedAt/closedById; OPEN→resolved=null. Permite deshacer un cierre por error.
+   229→   229→  * DELETE con cleanup de archivos físicos en disco (mismo patrón que installations/[id]/route.ts).
+   230→   230→  * POST create valida coherencia clientId/installation/saleOrder (la instalación y el pedido deben pertenecer al cliente indicado).
+   231→   231→- Verificación: `bun run lint` limpio en mis 6 archivos. Dev server: home=200, /api/incidents=401, /api/incidents/[id]=401, /api/incidents/[id]/attachments=401, sin errores de compilación en `/tmp/moinst-dev.log`. Trazabilidad clave implementada: desde cualquier incidencia se puede navegar en 1 clic a la instalación, al pedido de venta de origen, a cada presupuesto/pedido de compra, a cada albarán de entrada y al proveedor — la cadena completa cliente → instalación → pedido venta → compras → albaranes → proveedor.
+   232→   232→
+   233→   233→---
+   234→   234→Task ID: 2-f
+   235→   235→Agent: full-stack-developer
+   236→   236→Task: Agenda/Calendario + API
+   237→   237→
+   238→   238→Work Log:
+   239→   239→- Leído worklog.md + schema.prisma (Appointment, User, AppointmentType, AppointmentStatus) + componentes compartidos (PageHeader, EmptyState, StatusBadge con kind=appointment, format helpers fullAddress/formatDateTime, useAppStore ViewKey). Revisé clients-view, installations-view (cliente buscable con Popover+Command), dashboard-view (citas con Google Maps), sale-quote-detail-view (diálogo complejo) y la API de clients/installations como referencia de patrones (useQuery/useMutation, toast, zod, getCurrentUser/requireUser).
+   240→   240→- Creadas 4 rutas de API:
+   241→   241→  * /api/users/route.ts (GET lista usuarios activos con id+name+email+role, ordenados por role+name) — usado para el selector "asignado a".
+   242→   242→  * /api/appointments/route.ts (GET con filtros assignedToId/startAtFrom/startAtTo/status/clientId/type; POST create con zod, valida FKs client/installation/saleOrder/saleQuote/assignedTo, hereda clientId de installation si no se especifica, defaults assignedToId al usuario actual).
+   243→   243→  * /api/appointments/[id]/route.ts (GET detalle con client/installation/saleOrder/saleQuote/assignedTo; PUT partial con FK validation; DELETE).
+   244→   244→  * /api/appointments/[id]/status/route.ts (PATCH {status: PENDING/DONE/CANCELLED}).
+   245→   245→- Sustituí el stub de agenda-view.tsx por la vista completa:
+   246→   246→  * PageHeader "Agenda" con Select de "asignado a" (fetch /api/users) + botón "Nueva cita".
+   247→   247→  * 3 modos vía Tabs (Hoy/Semana/Mes) + navegación prev/next + botón "Hoy"/"Esta semana"/"Este mes".
+   248→   248→  * Vista Hoy (default): lista de tarjetas con hora, badge tipo, nombre cliente (link → client-detail), dirección + "Abrir en Google Maps" (target=_blank), asignado, badges de vínculos (instalación/pedido/presupuesto), notas, acciones "Marcar realizada"/"Cancelar" (solo si PENDING) + "Ver / editar".
+   249→   249→  * Vista Semana: grid 7 días (responsive 1→7 cols), cada columna con header (weekday+día+count badge), lista scrollable de chips compactos (hora + cliente) ordenados por startAt; columna de hoy destacada con ring-2 ring-primary/40; click chip → diálogo de edición; click header día → cambia a modo Hoy con ese día.
+   250→   250→  * Vista Mes: grid 7-col con días leading/trailing (muted), badges de tipo por cita dentro de cada celda + resumen "N citas" abajo; click día → cambia a modo Hoy con esa fecha.
+   251→   251→  * Diálogo "Nueva cita" / Editar (key-remount para resetear estado al cambiar objetivo): tipo (QUOTE_VISIT/INSTALLATION/MAINTENANCE/INCIDENT/OTHER), datetime-local + duración (Select 30/60/90/120/180/240/480), asignado a, cliente buscable (Popover+Command sobre /api/clients) con autofill de dirección desde cliente, instalación filtrada por cliente, pedido/presupuesto filtrados por cliente, dirección editable con preview Google Maps, notas. En edición: banner de estado actual con acciones rápidas Realizada/Cancelar + botón Eliminar en el footer.
+   252→   252→- Helpers de fecha locales (sin timezone surprises): fmtDateOnly, toLocalDateTimeInput, fromLocalDateTimeInput, startOfWeek (lunes), startOfMonth/endOfMonth, sameDay, isToday.
+   253→   253→- TYPE_META con paleta teal/amber/emerald/red/muted (NO azul/índigo) para los chips de tipo.
+   254→   254→- Mutaciones: statusMut (PATCH /status), saveMut (POST/PUT según tenga id), deleteMut (DELETE). Invalidación de ["appointments"] + ["dashboard"].
+   255→   255→- Lint clean: 0 errores en mis 5 archivos. Patrón lint-friendly en todo: useMemo antes de conditional returns, sin setState-in-effect (autofill en onClientSelect callback, key-remount para el diálogo).
+   256→   256→
+   257→   257→Stage Summary:
+   258→   258→- Archivos creados (API, 4): src/app/api/users/route.ts; src/app/api/appointments/route.ts; src/app/api/appointments/[id]/route.ts; src/app/api/appointments/[id]/status/route.ts.
+   259→   259→- Archivo modificado (view, 1): src/components/views/agenda-view.tsx (stub → vista completa con 3 modos + diálogo create/edit).
+   260→   260→- Decisiones clave: la API de listado devuelve items con relaciones para que la vista no necesite N+1 queries; el cálculo del rango de fechas se hace en cliente (useMemo por modo+fecha seleccionada) y se pasa como ISO a la API; en la creación, si no se especifica assignedToId, el backend asigna al usuario actual (defensive); la herencia de clientId desde installationId evita inconsistencias; los chips de semana/mes usan el color del tipo (no el estado) para que el usuario vea de un vistazo el mix de tipos de cita por día; el autofill de dirección se hace en el callback onClientSelect (no en useEffect) para mantener lint limpio; el diálogo create/edit se remonta vía `key={editing?.id ?? 'new'}` + Radix Dialog unmount-on-close → no se necesita sync effect.
+   261→   261→- Verificación: dev server (comando exacto del enunciado): home 200, /api/appointments 401, /api/users 401, /api/appointments/[id] 401. Sin errores de compilación en /tmp/moinst-dev.log. `bun run lint`: 0 errores en mis 5 archivos (4 APIs + agenda-view). Los 2 errores + 1 warning restantes son preexistentes en archivos fuera de mi scope (src/app/page.tsx, src/app/api/attachments/[id]/route.ts, src/components/shared/attachment-uploader.tsx).
+   262→   262→
+   263→   263→---
+   264→   264→Task ID: 2-g
+   265→   265→Agent: full-stack-developer
+   266→   266→Task: Ajustes (usuarios, catálogos, plantillas, sistema) + API
+   267→   267→
+   268→   268→Work Log:
+   269→   269→- Leí worklog (192 líneas, hasta 2-d), schema.prisma (Setting con `value Json`, User con `role enum SOCIO/ADMIN`, `passwordHash`, `active`), seed.ts (defaults: articleCategories, installationTypes, defaultWarrantyMonths=24, emailTemplateQuote/Warranty/Appointment, companyName="MOInst", lowStockAlerts=true), session.ts (getCurrentUser/requireUser), auth.ts (bcrypt.hash rounds 10), clients-view como referencia de patrón useQuery+useMutation+toast+Dialog, components/ui (Tabs/Table/Switch/Select/Dialog/Badge/Textarea).
+   270→   270→- Confirmé que `/api/users` y `/api/settings` NO existían (LS en src/app/api). bcryptjs ya en package.json (^3.0.3). Creé las 3 rutas + reemplacé el stub.
+   271→   271→- Creé `/api/settings/route.ts`: GET devuelve `{key: value}` plain object desde todos los Setting rows; PUT valida con `z.record(z.string(), z.unknown())` y upserts cada entry en paralelo, luego devuelve el nuevo map.
+   272→   272→- Creé `/api/users/route.ts`: GET lista usuarios con select `{id,name,email,phone,role,active,createdAt}` ordenado por createdAt asc; POST valida con zod (name, email, phone opcional, role enum con default SOCIO, password min 6), normaliza email a lower+trim, chequea unique, hashea con `bcrypt.hash(pw, 10)`.
+   273→   273→- Creé `/api/users/[id]/route.ts`: GET detalle; PUT actualiza name/email/phone/role/active/password(opcional) — si password viene, hashea con bcrypt; PATCH toggle active via `{active:boolean}` body.
+   274→   274→- Sustituí `settings-view.tsx` (stub) por una vista con `PageHeader` + `Tabs` 4 pestañas:
+   275→   275→  * Usuarios: useQuery(['users']) + tabla (Table) con badge SOCIO/ADMIN, Switch activo (PATCH inmediato, optimistic), botón "Editar" → Dialog. Botón "Nuevo usuario" → Dialog con form completo. `UserForm` reutilizable para create/edit con `key` prop para forzar remount y useState initializer — sin useEffect, sin eslint-disable.
+   276→   276→  * Catálogos: `EditableList` reutilizable (input + Añadir con Enter, botones Up/Down/Trash, dedupe) para `articleCategories` y `installationTypes`; input numérico para `defaultWarrantyMonths` (1-120); botón "Guardar catálogos" → PUT /api/settings.
+   277→   277→  * Plantillas: 3 Textareas (Quote/Warranty/Appointment) con label de variables disponibles en `<code>` badges; Input para `companyName`; botón "Guardar plantillas" → PUT /api/settings.
+   278→   278→  * Sistema: InfoCards para versión (v0.2.1) y estado DB (useQuery que hace GET /api/users → badge ✓ "Conectado a Neon Postgres" emerald o ✗ "Sin conexión" red); Switch para `lowStockAlerts` (toggle inmediato con optimistic update + revert on error); nota sobre backup Neon (7 días PITR).
+   279→   279→- Lint: 0 errores/warnings en mis 4 archivos (settings-view.tsx + 3 API routes). Errores restantes preexistentes fuera de scope: page.tsx (useEffect setState), attachments/[id]/route.ts (require import), attachment-uploader.tsx (unused eslint-disable warning).
+   280→   280→- Dev server test: home=200, /api/settings=401, /api/users=401, /api/users/x=401. Sin errores de compilación en /tmp/moinst-dev.log.
+   281→   281→
+   282→   282→Stage Summary:
+   283→   283→- Archivos creados: 3 API routes (`/api/settings/route.ts`, `/api/users/route.ts`, `/api/users/[id]/route.ts`) + 1 vista reemplazada (`settings-view.tsx`).
+   284→   284→- Decisiones clave:
+   285→   285→  * Form sync sin useEffect: patrón `key`-prop remount (key={editing.id} para edit, key={`new-${newKey}`} con session counter para create) + useState initializers. Lint-clean.
+   286→   286→  * Toggle lowStock con optimistic update (onMutate + revert onError) para UX inmediata.
+   287→   287→  * DB connectivity check reusa GET /api/users (trivial `db.user.count()`-equivalente) en lugar de crear un endpoint /api/system nuevo — evita scope creep.
+   288→   288→  * Setting.value es Json en Prisma — uso `value as never` en upserts para satisfacer TS strict; arrays se guardan como JSON arrays, strings como JSON strings, números como JSON numbers.
+   289→   289→  * bcrypt.hash rounds 10 (consistente con auth.ts y seed.ts).
+   290→   290→- Verificación: dev server OK (200/401/401/401, sin errores compile). `bun run lint`: 0 errores en mis archivos.
+   291→   291→
+   292→   292→---
+   293→   293→Task ID: FINAL
+   294→   294→Agent: main (orchestrator)
+   295→   295→Task: Integración, verificación E2E con agent-browser y fix del entorno
+   296→   296→
+   297→   297→Work Log:
+   298→   298→- Lanzados 7 subagentes en paralelo (2-a..2-g); los 7 completaron sus módulos sin conflictos.
+   299→   299→- Corregidos 3 errores de lint (require() en attachments/[id], set-state-in-effect en page.tsx, eslint-disable inútil en attachment-uploader). Lint: 0 errores.
+   300→   300→- Detectado bug crítico de entorno: el sandbox del bash exporta `DATABASE_URL=file:.../custom.db` (SQLite) globalmente, y Next.js NO sobreescribe vars de entorno ya existentes → authorize() de NextAuth veía URL vacía y el login fallaba con "URL must start with postgresql://".
+
+[showing lines 1-300 of 391; use offset=301 with limit to continue reading]

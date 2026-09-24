@@ -35,6 +35,7 @@ export function AiChatPanel() {
   const [loading, setLoading] = useState(false);
   const [pendingActions, setPendingActions] = useState<Record<string, "pending" | "done" | "error">>({});
   const [actionResults, setActionResults] = useState<Record<string, any>>({});
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const qc = useQueryClient();
@@ -46,25 +47,38 @@ export function AiChatPanel() {
   }, [messages, loading]);
 
   async function send() {
-    if (!input.trim() || loading) return;
+    if (loading) return;
     const userMsg = input.trim();
+    const file = attachedFile;
+    if (!userMsg && !file) return;
     setInput("");
-    const next = [...messages, { role: "user", content: userMsg } as ChatMessage];
+    setAttachedFile(null);
+    const displayContent = file ? `📎 ${file.name}${userMsg ? " — " + userMsg : ""}` : userMsg;
+    const next = [...messages, { role: "user", content: displayContent } as ChatMessage];
     setMessages(next);
     setLoading(true);
 
-    // construye historial para el modelo
     const history = next.slice(1).map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: m.content,
     }));
 
     try {
-      const r = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, history }),
-      });
+      let r: Response;
+      if (file) {
+        // Subida con archivo (FormData): el backend parsea CSV/Excel
+        const fd = new FormData();
+        fd.append("message", userMsg);
+        fd.append("history", JSON.stringify(history));
+        fd.append("file", file);
+        r = await fetch("/api/ai/chat", { method: "POST", body: fd });
+      } else {
+        r = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userMsg, history }),
+        });
+      }
       const data = await r.json();
       if (!r.ok) {
         setMessages((p) => [...p, { role: "assistant", content: `⚠️ ${data.error ?? "Error"}\n${data.detail ?? ""}` }]);
@@ -110,11 +124,12 @@ export function AiChatPanel() {
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    // Por ahora indicamos al usuario que suba el archivo desde el módulo pertinente
-    setInput(
-      (prev) =>
-        `${prev}${prev ? " " : ""}[Archivo adjunto: ${f.name} — para procesar listas de precios, súbelo desde el módulo de Artículos/Proveedores]`
-    );
+    if (f.size > 5 * 1024 * 1024) {
+      toast({ title: "Archivo demasiado grande", description: "Máximo 5MB", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
+    setAttachedFile(f);
     e.target.value = "";
   }
 
@@ -250,20 +265,34 @@ export function AiChatPanel() {
 
             {/* Input */}
             <div className="border-t border-border p-2 bg-background">
+              {attachedFile && (
+                <div className="mb-1.5 flex items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-2 py-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="text-xs font-medium truncate flex-1">{attachedFile.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{(attachedFile.size / 1024).toFixed(0)} KB</span>
+                  <button
+                    onClick={() => setAttachedFile(null)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    title="Quitar archivo"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <div className="flex items-end gap-1">
-                <input ref={fileRef} type="file" className="hidden" onChange={onFile} accept=".pdf,image/*,.xlsx,.csv" />
-                <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={() => fileRef.current?.click()} title="Adjuntar archivo">
+                <input ref={fileRef} type="file" className="hidden" onChange={onFile} accept=".pdf,image/*,.xlsx,.xls,.csv,.txt" />
+                <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={() => fileRef.current?.click()} title="Adjuntar archivo (CSV/Excel de precios, PDF, foto)">
                   <Paperclip className="w-4 h-4" />
                 </Button>
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                  placeholder="Escribe tu consulta o petición..."
+                  placeholder={attachedFile ? "Describe qué hacer con el archivo (ej. 'actualiza precios del proveedor X')..." : "Escribe tu consulta o petición..."}
                   className="h-9"
                   disabled={loading}
                 />
-                <Button size="icon" className="shrink-0 h-9 w-9" onClick={send} disabled={loading || !input.trim()}>
+                <Button size="icon" className="shrink-0 h-9 w-9" onClick={send} disabled={loading || (!input.trim() && !attachedFile)}>
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </Button>
               </div>

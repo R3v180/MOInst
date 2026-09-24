@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "@/components/app/sidebar-nav";
+import { NotificationsBell } from "@/components/app/notifications-bell";
 import {
   Search,
   Menu,
@@ -15,7 +16,10 @@ import {
   Sparkles,
   X,
   Loader2,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/hooks/use-toast";
@@ -34,6 +38,46 @@ const TYPE_LABEL: Record<SearchResult["type"], string> = {
   saleOrder: "Pedido venta",
   incident: "Incidencia",
 };
+
+function ThemeToggle() {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // Stable placeholder (avoids hydration mismatch: server has no theme info)
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        className="hidden md:flex"
+        disabled
+        aria-hidden
+        tabIndex={-1}
+      >
+        <Sun className="w-5 h-5" />
+      </Button>
+    );
+  }
+
+  // resolvedTheme accounts for "system" (use it for the icon); theme is the user's stored pref.
+  const isDark = (resolvedTheme ?? theme) === "dark";
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="hidden md:flex"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+      aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+    >
+      {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+    </Button>
+  );
+}
 
 export function TopBar() {
   const { setView, setSidebarOpen, setAiPanelOpen } = useAppStore();
@@ -186,6 +230,8 @@ export function TopBar() {
             <Sparkles className="w-4 h-4 mr-2" />
             IA
           </Button>
+          <ThemeToggle />
+          <NotificationsBell />
           <Button
             variant="ghost"
             size="icon"

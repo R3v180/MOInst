@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { fullAddress, formatDate } from "@/lib/format";
 import { Users, Plus, Search, Phone, Mail, MapPin, Siren, Wrench, Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 
 export function ClientsView() {
@@ -110,8 +111,29 @@ export function ClientsView() {
 
       {/* Lista */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando...
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/3" />
+                  </div>
+                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-3 w-2/3" />
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+                <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="h-3 w-14" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : items.length === 0 ? (
         <EmptyState

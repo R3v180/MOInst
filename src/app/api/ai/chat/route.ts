@@ -8,6 +8,7 @@ import {
   parseAiResponse,
   type ReadQuery,
 } from "@/lib/ai/tools";
+import { parseAttachedFile, buildAttachmentInstruction } from "@/lib/ai/file-parse";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -21,23 +22,56 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  const { message, history = [] }: { message: string; history?: ChatMessage[] } = await req.json();
+  // Acepta JSON (sin archivo) o FormData (con archivo adjunto)
+  const contentType = req.headers.get("content-type") ?? "";
+  let message = "";
+  let history: ChatMessage[] = [];
+  let parsedFile: Awaited<ReturnType<typeof parseAttachedFile>> | null = null;
 
-  if (!message?.trim()) {
+  if (contentType.includes("multipart/form-data")) {
+    const fd = await req.formData();
+    message = (fd.get("message") as string) ?? "";
+    const histRaw = fd.get("history") as string | null;
+    if (histRaw) {
+      try { history = JSON.parse(histRaw); } catch {}
+    }
+    const file = fd.get("file") as File | null;
+    if (file && file.size > 0) {
+      // límite ~5MB
+      if (file.size > 5 * 1024 * 1024) {
+        return NextResponse.json({ error: "Archivo demasiado grande (máx 5MB)" }, { status: 413 });
+      }
+      try {
+        parsedFile = await parseAttachedFile(file);
+      } catch (e: any) {
+        return NextResponse.json({ error: "No se pudo parsear el archivo", detail: e.message }, { status: 400 });
+      }
+    }
+  } else {
+    const body = await req.json();
+    message = body.message ?? "";
+    history = body.history ?? [];
+  }
+
+  if (!message?.trim() && !parsedFile) {
     return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 });
   }
+
+  // Contenido final del mensaje del usuario (con archivo inyectado si procede)
+  const userContent = parsedFile
+    ? buildAttachmentInstruction(parsedFile, message || "(sin mensaje adicional)")
+    : message;
 
   // Construye la conversación para el modelo
   const messages: ChatMessage[] = [
     { role: "assistant", content: AI_SYSTEM_PROMPT },
-    // Inyecta un resumen rápido del contexto actual (usuarios disponibles para asignar citas, etc.)
     {
       role: "assistant",
       content:
         `Contexto: usuario actual id=${user.id}, nombre=${user.name}, rol=${user.role}. Para crear citas, usa assignedToId=${user.id} por defecto.`,
     },
     ...history.slice(-10),
-    { role: "user", content: message },
+    { role: "user", content: userContent },
   ];
 
   let zai: Awaited<ReturnType<typeof ZAI.create>>;
@@ -112,7 +146,7 @@ export async function POST(req: NextRequest) {
     await db.aiConversation.create({
       data: {
         userId: user.id,
-        userMessage: message,
+        userMessage: parsedFile ? `[Archivo: ${parsedFile.name}] ${message}` : message,
         aiResponse: finalText + (actions.length ? `\n\n[Acciones propuestas: ${actions.length}]` : ""),
         actionTaken: false,
         actionSummary: actions.length
@@ -125,5 +159,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     text: finalText || "(sin respuesta)",
     actions,
+    fileName: parsedFile?.name ?? null,
   });
 }
