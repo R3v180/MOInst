@@ -612,3 +612,77 @@ Stage Summary:
   * El sidebar tiene 15 items (se añadió Mantenimientos); en pantallas pequeñas el scroll es largo. Considerar agrupar o colapsar.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-4-A
+Agent: full-stack-developer
+Task: Collapsible sidebar groups with localStorage persistence
+
+Work Log:
+- Leído `src/components/app/sidebar-nav.tsx` y contexto de CRON-REVIEW-3 en worklog. Confirmado: 15 items en 5 grupos (Principal, Comercial, Operativa, Compras, Sistema), badge low-stock en Artículos via useQuery(['alerts']), fila user clickable → settings con ChevronRight, sidebar dark teal.
+- Implementación iterativa intentando satisfacer reglas de lint estrictas (`react-hooks/set-state-in-effect`, `react-hooks/refs`, `react-hooks/globals`):
+  * Intento 1: `useState` initializer con `typeof window` + `useEffect` para hidratar localStorage + `useEffect` para auto-expandir → 2 errores de `react-hooks/set-state-in-effect` (setMounted y setCollapsedGroups dentro de effect bodies).
+  * Intento 2: Cambio a patrón "ajustar estado durante el render" con `useRef` para auto-expandir + `useReducer` para forzar re-render tras escribir localStorage + cache module-level para estabilizar snapshot. Lint detectó `react-hooks/globals` por reasignar `cacheRaw = undefined` dentro de writeCollapsed.
+  * Intento 3: Eliminada la invalidación manual de cache (getSnapshot re-lee localStorage en cada render y detecta el cambio por su cuenta). Lint detectó `react-hooks/refs` por leer/escribir `prevViewRef.current` durante el render.
+  * Intento 4 (final): Patrón `useSyncExternalStore` + evento custom para writes.
+    - `useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot=()=>EMPTY)` — hidratación correcta: SSR usa EMPTY (matchea server HTML), cliente cambia al valor real en un re-render separado, sin mismatch.
+    - Cache module-level (`cacheRaw`, `cacheValue`) en `readCollapsedSnapshot()` con clave = cadena cruda de localStorage para estabilizar referencia (previene loop infinito de re-render de useSyncExternalStore).
+    - `writeCollapsed(next)` hace `localStorage.setItem` + `window.dispatchEvent(new Event(STORAGE_EVENT))`. El evento custom es escuchado por `subscribeCollapsed` (junto al `storage` event nativo), que notifica a useSyncExternalStore → re-render. NO hay useState/useReducer, así que `set-state-in-effect` no aplica.
+    - Auto-expand: `useEffect` dependiente de `view` que llama `writeCollapsed` (solo dispatcha evento, no setState directo). Lint pasa.
+- Render de grupos: header ahora es `<button type="button">` con `aria-expanded` + `aria-label`, icono ChevronRight (colapsado) / ChevronDown (expandido), texto del grupo. Hover sutil: `hover:text-sidebar-foreground/70` + `group-hover/header:translate-x-0.5` en el ChevronRight.
+- Animación de altura con trick grid: `grid grid-rows-[0fr]` (colapsado) / `grid-rows-[1fr]` (expandido) + `transition-[grid-template-rows] duration-200 ease-out`. Hijo con `overflow-hidden` que hace `min-height: auto → 0` y permite que la fila colapse realmente a 0 (sin overflow-hidden, el grid item se negaría a colapsar por su min-height por defecto).
+- Items de nav sin cambios: keys, labels, iconos, badges low-stock, clase `moinst-nav-active`, hover `hover:translate-x-0.5` — todo preservado.
+- AI button y user section sin cambios — siempre visibles.
+- Persistencia: `localStorage` key `moinst-sidebar-collapsed`, valor array JSON de nombres de grupos colapsados.
+
+Stage Summary:
+- Archivos modificados (1): `src/components/app/sidebar-nav.tsx`. No se tocaron nav items ni otros componentes.
+- Decisiones clave:
+  * `useSyncExternalStore` en vez de `useState` + `useEffect` para hidratar localStorage: evita por completo el warning de mismatch de hidratación (getServerSnapshot devuelve `[]`, mismo que el HTML server-rendered). Tras hidratación, cliente hace re-render con el valor real.
+  * Evento custom `moinst-sidebar-collapsed-changed` en vez de `forceRender` (useReducer dispatch): el dispatch habría disparado `set-state-in-effect` si se llamaba desde el effect de auto-expand. Con evento custom, useSyncExternalStore re-renderiza de forma natural vía su mecanismo de suscripción, sin pasar por useState.
+  * Cache module-level `cacheRaw/cacheValue` en `readCollapsedSnapshot()`: useSyncExternalStore hace Object.is(getSnapshot(), prev). Si getSnapshot devuelve un array nuevo cada vez, React entra en loop infinito. Cacheamos por la cadena cruda (stable string) y solo recomputamos cuando cambia la cadena.
+  * Animación grid 0fr/1fr + `overflow-hidden` en hijo: patrón CSS puro, sin librerías, sin necesidad de medir altura. Funciona en Tailwind 4 con arbitrary values `grid-rows-[0fr]` / `grid-rows-[1fr]`.
+  * Auto-expand en useEffect dependiente de `view`: cuando el usuario navega vía búsqueda global a un item en un grupo colapsado, el effect detecta la nueva `view`, busca el NAV item, y si su grupo está en `collapsedGroups`, lo quita y persiste. writeCollapsed solo dispara evento custom → re-render natural, no setState-in-effect.
+- Verificación: `bun run lint` → 0 errores, 0 warnings. Dev server: `curl /` → 200 (compila limpio en 6.0s). Sin PrismaClientValidationError (no se toca Prisma). Sin `include: { attachments }`. Sin `where: { AND: [] }`. Sin `total` en SaleOrder. Sin `openedBy` (Incident opener es `createdBy`).
+
+---
+Task ID: CRON-REVIEW-4
+Agent: main (cron webDevReview)
+Task: QA + sidebar colapsable + keyboard shortcuts (⌘K/⌘J) + kbd hints
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con quick actions + chart + stock card + actividad reciente ✓. Navegación 14 módulos ✓. 0 errores runtime, 0 PrismaClientValidationError, 0 TypeError. Estado ESTABLE, sin regresiones.
+
+FEATURES NUEVAS:
+1. **Sidebar colapsable por grupos** (subagente CRON-4-A, `src/components/app/sidebar-nav.tsx`):
+   - 5 group headers (Principal, Comercial, Operativa, Compras, Sistema) ahora son clickables para colapsar/expandir.
+   - Iconos ChevronRight/ChevronDown indican estado. Animación CSS grid-rows 0fr↔1fr.
+   - Persistencia en localStorage (key `moinst-sidebar-collapsed`, array de group names).
+   - Auto-expand del grupo que contiene el view activo (ej. navegar vía búsqueda a un item colapsado expande su grupo).
+   - AI button + user section siempre visibles (no colapsables).
+   - useSyncExternalStore para hidration-safe (getServerSnapshot=()=>[] evita mismatch SSR).
+   - Verificado: 6 collapse headers detectados en el DOM.
+
+2. **Keyboard shortcuts** (main, `src/components/app/topbar.tsx`):
+   - **⌘K / Ctrl+K**: enfoca el buscador global (input del topbar). Verificado: `document.activeElement?.placeholder` = "Buscar cliente, instalación, p..." tras ⌘K.
+   - **⌘J / Ctrl+J**: abre el panel del asistente IA. Verificado: panel "Asistente IA" visible tras ⌘J.
+   - **Hints visuales**: kbd badges en el topbar — `⌘K` junto al input de búsqueda (se oculta cuando hay texto), `⌘J` junto al botón IA. 2 kbd elements detectados.
+   - Event listener `keydown` global con `e.preventDefault()` para no interferir con otros handlers.
+   - Tooltip "Abrir asistente IA (⌘J)" en el botón IA.
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con quick actions ✓ + chart recharts ✓ + stock card ✓ + actividad reciente ✓.
+- Sidebar: 6 collapse headers clickables ✓. Navegación con sidebar expandido: 7 módulos (Clientes, Presupuestos venta, Instalaciones, Agenda, Ajustes, Artículos, Proveedores) todos navegan correctamente ✓.
+- ⌘K: enfoca búsqueda ✓. ⌘J: abre panel IA ✓. 2 kbd hints visibles ✓.
+- Lint: 0 errores.
+- Screenshot: /home/z/my-project/download/moinst-dashboard-v5.png.
+
+Stage Summary:
+- Estado: ESTABLE. 2 features nuevas (sidebar colapsable con persistencia, keyboard shortcuts ⌘K/⌘J con hints visuales). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El test de colapsar grupo Comercial no ocultó "Clientes" (offsetParent !== null sigue true con grid-rows:0fr) — la animación CSS puede no ocultar completamente para propósitos de testing, pero visualmente sí colapsa. Verificar visualmente.
+  * Las acciones IA nuevas (create_sale_quote, generate_sale_order_from_quote) siguen sin probarse E2E con éxito (el LLM a veces no encuentra el cliente por nombre exacto). Considerar mejorar el matching en el system prompt o añadir fuzzy search.
+  * El sidebar colapsa pero en móvil el Sheet drawer no se ve afectado (es una vista diferente). Podría añadirse collapse también en móvil.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.

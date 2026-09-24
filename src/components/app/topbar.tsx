@@ -101,9 +101,27 @@ export function TopBar() {
         setShowResults(false);
       }
     }
+    function onKey(e: KeyboardEvent) {
+      // Cmd/Ctrl + J → abrir panel IA
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setAiPanelOpen(true);
+      }
+      // Cmd/Ctrl + K → enfocar buscador global
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const input = boxRef.current?.querySelector("input");
+        input?.focus();
+        input?.select();
+      }
+    }
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, []);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [setAiPanelOpen]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -182,8 +200,13 @@ export function TopBar() {
             onChange={(e) => setQ(e.target.value)}
             onFocus={() => q.length >= 2 && setShowResults(true)}
             placeholder="Buscar cliente, instalación, presupuesto, pedido, incidencia..."
-            className="pl-9 pr-8"
+            className="pl-9 pr-16"
           />
+          {!q && (
+            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground bg-muted border border-border rounded">
+              ⌘K
+            </kbd>
+          )}
           {q && (
             <button
               onClick={() => { setQ(""); setResults([]); }}
@@ -226,15 +249,21 @@ export function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center gap-1 ml-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden md:flex"
-            onClick={() => setAiPanelOpen(true)}
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            IA
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden md:flex"
+                onClick={() => setAiPanelOpen(true)}
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                IA
+                <kbd className="ml-1.5 px-1 py-0.5 text-[9px] font-mono text-muted-foreground bg-muted/60 border border-border rounded">⌘J</kbd>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Abrir asistente IA (⌘J)</TooltipContent>
+          </Tooltip>
           <ThemeToggle />
           <Tooltip>
             <TooltipTrigger asChild>
