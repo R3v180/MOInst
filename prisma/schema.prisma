@@ -1,0 +1,586 @@
+// MOInst — Prisma schema for Neon Postgres
+// Gestión para instaladores (climatización, calderas, termos)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Usuarios (los 2 socios)
+// ─────────────────────────────────────────────────────────────────────────────
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  phone        String?
+  role         Role      @default(SOCIO)
+  passwordHash String
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdClients          Client[]
+  createdInstallations    Installation[]
+  createdSaleQuotes       SaleQuote[]       @relation("SaleQuoteCreatedBy")
+  createdSaleOrders       SaleOrder[]       @relation("SaleOrderCreatedBy")
+  createdPurchaseQuotes   PurchaseQuote[]   @relation("PurchaseQuoteCreatedBy")
+  createdPurchaseOrders   PurchaseOrder[]   @relation("PurchaseOrderCreatedBy")
+  createdAlbaranes        Albaran[]
+  openedIncidents         Incident[]        @relation("IncidentOpenedBy")
+  closedIncidents         Incident[]        @relation("IncidentClosedBy")
+  performedMaintenances   Maintenance[]
+  assignedAppointments    Appointment[]     @relation("AppointmentAssignedTo")
+  uploadedAttachments     Attachment[]
+  aiConversations         AiConversation[]
+}
+
+enum Role {
+  SOCIO
+  ADMIN
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clientes
+// ─────────────────────────────────────────────────────────────────────────────
+model Client {
+  id                String           @id @default(cuid())
+  name              String
+  nif               String?
+  phonePrimary      String?
+  phoneSecondary    String?
+  email             String?
+  addressStreet     String?
+  addressNumber     String?
+  addressFloor      String?
+  city              String?
+  province          String?
+  postalCode        String?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  createdById       String
+  createdBy         User             @relation(fields: [createdById], references: [id])
+
+  installations   Installation[]
+  saleQuotes      SaleQuote[]
+  saleOrders      SaleOrder[]
+  incidents       Incident[]
+  appointments    Appointment[]
+
+  @@index([city])
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proveedores
+// ─────────────────────────────────────────────────────────────────────────────
+model Supplier {
+  id           String            @id @default(cuid())
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  contactName  String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  articlePrices    ArticleSupplier[]
+  purchaseQuotes   PurchaseQuote[]
+  purchaseOrders   PurchaseOrder[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Artículos (catálogo de materiales)
+// ─────────────────────────────────────────────────────────────────────────────
+model Article {
+  id              String           @id @default(cuid())
+  internalCode    String           @unique
+  name            String
+  category        String           // climatización / calderas / termos / repuestos / accesorios / consumibles
+  articleType     ArticleType      // SERIALIZED (con nº serie → genera Instalación) o CONSUMABLE
+  unit            String           @default("unidad") // unidad, metro, litro, kg...
+  brand           String?
+  description     String?
+  stock           Float            @default(0)
+  stockMin        Float            @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  supplierPrices         ArticleSupplier[]
+  saleQuoteLines        SaleQuoteLine[]
+  saleOrderLines        SaleOrderLine[]
+  purchaseQuoteLines    PurchaseQuoteLine[]
+  purchaseOrderLines    PurchaseOrderLine[]
+
+  @@index([category])
+  @@index([name])
+}
+
+enum ArticleType {
+  SERIALIZED
+  CONSUMABLE
+}
+
+// Tabla histórica N a N: artículo–proveedor–precio (NUNCA se sobrescribe)
+model ArticleSupplier {
+  id              String    @id @default(cuid())
+  articleId       String
+  supplierId      String
+  price           Float
+  supplierRef     String?   // referencia del proveedor
+  priceDate       DateTime  @default(now())
+  deliveryDays    Int?
+  notes           String?
+
+  article         Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  supplier        Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, supplierId, priceDate])
+  @@index([articleId, supplierId])
+  @@index([supplierId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Instalaciones (equipos instalados en casa de un cliente)
+// ─────────────────────────────────────────────────────────────────────────────
+model Installation {
+  id                String            @id @default(cuid())
+  clientId          String
+  equipmentType     String            // aire acondicionado / caldera / termo / otro (lista editable)
+  brand             String?
+  model             String?
+  serialNumber      String?
+  location          String?           // ubicación en la vivienda
+  installDate       DateTime          @default(now())
+  warrantyEndDate   DateTime?
+  sourceSaleOrderId String?
+  status            InstallationStatus @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  createdById       String
+  createdBy         User              @relation(fields: [createdById], references: [id])
+
+  client          Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sourceSaleOrder  SaleOrder?        @relation("InstallationFromSaleOrder", fields: [sourceSaleOrderId], references: [id])
+  saleQuotes       SaleQuote[]
+  incidents       Incident[]
+  maintenances    Maintenance[]
+  appointments    Appointment[]
+
+  @@index([clientId])
+  @@index([serialNumber])
+}
+
+enum InstallationStatus {
+  ACTIVE
+  REMOVED
+  REPLACED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presupuestos de VENTA
+// ─────────────────────────────────────────────────────────────────────────────
+model SaleQuote {
+  id              String              @id @default(cuid())
+  number          String              @unique // PV-2026-0001
+  clientId        String
+  installationId  String?
+  issueDate       DateTime            @default(now())
+  validUntil      DateTime?
+  status          SaleQuoteStatus     @default(DRAFT)
+  laborTotal      Float               @default(0)
+  total           Float               @default(0)
+  notes           String?
+  createdById     String
+  createdBy       User                @relation("SaleQuoteCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  client          Client              @relation(fields: [clientId], references: [id])
+  installation    Installation?       @relation(fields: [installationId], references: [id])
+  lines           SaleQuoteLine[]
+  saleOrders      SaleOrder[]
+  appointments    Appointment[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum SaleQuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model SaleQuoteLine {
+  id              String    @id @default(cuid())
+  saleQuoteId     String
+  articleId       String?
+  description     String
+  quantity        Float     @default(1)
+  unitPrice       Float
+  discount        Float     @default(0)   // porcentaje 0-100
+  subtotal        Float
+  isLabor         Boolean   @default(false)
+  sortOrder       Int       @default(0)
+
+  saleQuote       SaleQuote @relation(fields: [saleQuoteId], references: [id], onDelete: Cascade)
+  article         Article?  @relation(fields: [articleId], references: [id])
+
+  @@index([saleQuoteId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pedidos de VENTA
+// ─────────────────────────────────────────────────────────────────────────────
+model SaleOrder {
+  id              String              @id @default(cuid())
+  number          String              @unique // PDV-2026-0001
+  sourceSaleQuoteId String?
+  clientId        String
+  issueDate       DateTime            @default(now())
+  status          SaleOrderStatus     @default(PENDING)
+  paymentStatus   PaymentStatus       @default(PENDING)
+  notes           String?
+  createdById     String
+  createdBy       User                @relation("SaleOrderCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  sourceSaleQuote     SaleQuote?       @relation(fields: [sourceSaleQuoteId], references: [id])
+  client              Client           @relation(fields: [clientId], references: [id])
+  lines               SaleOrderLine[]
+  installations       Installation[]   @relation("InstallationFromSaleOrder")
+  purchaseQuotes      PurchaseQuote[]
+  purchaseOrders      PurchaseOrder[]
+  incidents           Incident[]
+  deliveryAlbaranes   Albaran[]
+  appointments        Appointment[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum SaleOrderStatus {
+  PENDING
+  IN_PROGRESS
+  INSTALLED
+  CLOSED
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+}
+
+model SaleOrderLine {
+  id              String    @id @default(cuid())
+  saleOrderId     String
+  articleId       String?
+  description     String
+  quantity        Float     @default(1)
+  unitPrice       Float
+  discount        Float     @default(0)
+  subtotal        Float
+  isLabor         Boolean   @default(false)
+  sortOrder       Int       @default(0)
+
+  saleOrder       SaleOrder @relation(fields: [saleOrderId], references: [id], onDelete: Cascade)
+  article         Article?  @relation(fields: [articleId], references: [id])
+
+  @@index([saleOrderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presupuestos de COMPRA (enviados por proveedores)
+// ─────────────────────────────────────────────────────────────────────────────
+model PurchaseQuote {
+  id              String                 @id @default(cuid())
+  supplierId      String
+  saleOrderId     String?                 // VÍNCULO CLAVE: pedido de venta que motivó esta compra
+  issueDate       DateTime               @default(now())
+  total           Float                  @default(0)
+  status          PurchaseQuoteStatus     @default(RECEIVED)
+  notes           String?
+  createdById     String
+  createdBy       User                   @relation("PurchaseQuoteCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  supplier        Supplier               @relation(fields: [supplierId], references: [id])
+  saleOrder       SaleOrder?             @relation(fields: [saleOrderId], references: [id])
+  lines           PurchaseQuoteLine[]
+  purchaseOrders  PurchaseOrder[]
+
+  @@index([supplierId])
+  @@index([saleOrderId])
+}
+
+enum PurchaseQuoteStatus {
+  RECEIVED
+  ACCEPTED
+  DISCARDED
+}
+
+model PurchaseQuoteLine {
+  id              String         @id @default(cuid())
+  purchaseQuoteId String
+  articleId       String?
+  description     String
+  quantity        Float          @default(1)
+  unitPrice       Float
+  subtotal        Float
+  sortOrder       Int            @default(0)
+
+  purchaseQuote   PurchaseQuote  @relation(fields: [purchaseQuoteId], references: [id], onDelete: Cascade)
+  article         Article?       @relation(fields: [articleId], references: [id])
+
+  @@index([purchaseQuoteId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pedidos de COMPRA
+// ─────────────────────────────────────────────────────────────────────────────
+model PurchaseOrder {
+  id                       String                @id @default(cuid())
+  number                   String                @unique
+  sourcePurchaseQuoteId    String?
+  supplierId               String
+  saleOrderId              String?               // heredado del presupuesto de compra o manual
+  issueDate                DateTime              @default(now())
+  total                    Float                 @default(0)
+  status                   PurchaseOrderStatus   @default(PENDING)
+  notes                    String?
+  createdById              String
+  createdBy                User                  @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  sourcePurchaseQuote      PurchaseQuote?        @relation(fields: [sourcePurchaseQuoteId], references: [id])
+  supplier                 Supplier              @relation(fields: [supplierId], references: [id])
+  saleOrder                SaleOrder?            @relation(fields: [saleOrderId], references: [id])
+  lines                    PurchaseOrderLine[]
+  albaranes                Albaran[]
+
+  @@index([supplierId])
+  @@index([saleOrderId])
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  PARTIAL_RECEIVED
+  RECEIVED
+}
+
+model PurchaseOrderLine {
+  id               String         @id @default(cuid())
+  purchaseOrderId  String
+  articleId        String?
+  description      String
+  quantity         Float          @default(1)
+  unitPrice        Float
+  subtotal         Float
+  sortOrder        Int            @default(0)
+
+  purchaseOrder    PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  article          Article?       @relation(fields: [articleId], references: [id])
+
+  @@index([purchaseOrderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Albaranes (entrada de proveedor / entrega a cliente)
+// ─────────────────────────────────────────────────────────────────────────────
+model Albaran {
+  id                String         @id @default(cuid())
+  type              AlbaranType
+  purchaseOrderId   String?
+  saleOrderId       String?
+  date              DateTime       @default(now())
+  notes             String?
+  uploadedById      String
+  uploadedBy        User           @relation(fields: [uploadedById], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  purchaseOrder     PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  saleOrder         SaleOrder?     @relation(fields: [saleOrderId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([saleOrderId])
+}
+
+enum AlbaranType {
+  SUPPLIER_IN
+  CLIENT_DELIVERY
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Incidencias / Garantías
+// ─────────────────────────────────────────────────────────────────────────────
+model Incident {
+  id              String           @id @default(cuid())
+  number          String           @unique // INC-2026-0001
+  clientId        String
+  installationId  String?
+  saleOrderId     String?
+  openedAt        DateTime         @default(now())
+  description     String
+  status          IncidentStatus   @default(OPEN)
+  resolution      String?
+  closedAt        DateTime?
+  openedById      String
+  closedById      String?
+  createdBy       User             @relation("IncidentOpenedBy", fields: [openedById], references: [id])
+  closedBy        User?            @relation("IncidentClosedBy", fields: [closedById], references: [id])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  client          Client           @relation(fields: [clientId], references: [id])
+  installation    Installation?    @relation(fields: [installationId], references: [id])
+  saleOrder       SaleOrder?       @relation(fields: [saleOrderId], references: [id])
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_RESOLUTION
+  CLOSED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mantenimientos (histórico ligado a una instalación)
+// ─────────────────────────────────────────────────────────────────────────────
+model Maintenance {
+  id              String       @id @default(cuid())
+  installationId  String
+  date            DateTime     @default(now())
+  nextReviewDate  DateTime?
+  notes           String?
+  performedById   String
+  performedBy     User         @relation(fields: [performedById], references: [id])
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  installation    Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([installationId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agenda / Citas
+// ─────────────────────────────────────────────────────────────────────────────
+model Appointment {
+  id              String           @id @default(cuid())
+  type            AppointmentType
+  startAt         DateTime
+  durationMin     Int              @default(60)
+  clientId        String?
+  installationId  String?
+  saleOrderId     String?
+  saleQuoteId     String?
+  assignedToId    String
+  assignedTo      User              @relation("AppointmentAssignedTo", fields: [assignedToId], references: [id])
+  address         String?
+  status          AppointmentStatus @default(PENDING)
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  client          Client?          @relation(fields: [clientId], references: [id])
+  installation    Installation?   @relation(fields: [installationId], references: [id])
+  saleOrder       SaleOrder?       @relation(fields: [saleOrderId], references: [id])
+  saleQuote       SaleQuote?       @relation(fields: [saleQuoteId], references: [id])
+
+  @@index([assignedToId])
+  @@index([startAt])
+  @@index([clientId])
+}
+
+enum AppointmentType {
+  QUOTE_VISIT
+  INSTALLATION
+  MAINTENANCE
+  INCIDENT
+  OTHER
+}
+
+enum AppointmentStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adjuntos (tabla genérica polimórfica: entityType + entityId, sin FK)
+// ─────────────────────────────────────────────────────────────────────────────
+model Attachment {
+  id              String           @id @default(cuid())
+  entityType      AttachmentEntity
+  entityId        String
+  fileType        AttachmentFileType
+  filePath        String
+  fileName        String
+  mimeType        String
+  uploadedById    String
+  uploadedBy      User             @relation(fields: [uploadedById], references: [id])
+  createdAt       DateTime         @default(now())
+
+  @@index([entityType, entityId])
+}
+
+enum AttachmentEntity {
+  INSTALLATION
+  PURCHASE_ORDER
+  SALE_ORDER
+  SALE_QUOTE
+  PURCHASE_QUOTE
+  ALBARAN
+  INCIDENT
+}
+
+enum AttachmentFileType {
+  PHOTO
+  PDF
+  EXCEL
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversaciones con la IA (historial del chat)
+// ─────────────────────────────────────────────────────────────────────────────
+model AiConversation {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  userMessage   String
+  aiResponse    String
+  actionTaken   Boolean  @default(false)
+  actionSummary String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ajustes globales (configuración de la app)
+// ─────────────────────────────────────────────────────────────────────────────
+model Setting {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           Json
+  updatedAt       DateTime @updatedAt
+}

@@ -1,0 +1,718 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useEffect, useState } from "react";
+     4→     4→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     5→     5→import { useAppStore } from "@/store/app-store";
+     6→     6→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+     7→     7→import { Button } from "@/components/ui/button";
+     8→     8→import { Input } from "@/components/ui/input";
+     9→     9→import { Label } from "@/components/ui/label";
+    10→    10→import { Textarea } from "@/components/ui/textarea";
+    11→    11→import { Badge } from "@/components/ui/badge";
+    12→    12→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    13→    13→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    14→    14→import {
+    15→    15→  DropdownMenu,
+    16→    16→  DropdownMenuTrigger,
+    17→    17→  DropdownMenuContent,
+    18→    18→  DropdownMenuItem,
+    19→    19→  DropdownMenuSeparator,
+    20→    20→  DropdownMenuLabel,
+    21→    21→} from "@/components/ui/dropdown-menu";
+    22→    22→import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+    23→    23→import { PageHeader } from "@/components/shared/page-header";
+    24→    24→import { StatusBadge } from "@/components/shared/status-badge";
+    25→    25→import { AttachmentUploader, AttachmentThumb } from "@/components/shared/attachment-uploader";
+    26→    26→import { formatCurrency, formatDate, fullAddress } from "@/lib/format";
+    27→    27→import {
+    28→    28→  ClipboardList, Loader2, ChevronDown, Wrench, FileText, FileInput,
+    29→    29→  Siren, Truck, Plus, Save, Package, Check,
+    30→    30→} from "lucide-react";
+    31→    31→import { toast } from "@/hooks/use-toast";
+    32→    32→import { Skeleton } from "@/components/ui/skeleton";
+    33→    33→
+    34→    34→type InstallItem =
+    35→    35→  | { mode: "new"; clientId: string; equipmentType: string; brand?: string | null; model?: string | null; serialNumber?: string | null; location?: string | null; warrantyEndDate?: string | null; notes?: string | null }
+    36→    36→  | { mode: "link"; installationId: string };
+    37→    37→
+    38→    38→export function SaleOrderDetailView() {
+    39→    39→  const { params, setView } = useAppStore();
+    40→    40→  const id = params.id;
+    41→    41→  const qc = useQueryClient();
+    42→    42→
+    43→    43→  const [showInstall, setShowInstall] = useState(false);
+    44→    44→  const [notesDraft, setNotesDraft] = useState<string | null>(null);
+    45→    45→
+    46→    46→  const { data: order, isLoading } = useQuery({
+    47→    47→    queryKey: ["sale-order", id],
+    48→    48→    queryFn: () => fetch(`/api/sale-orders/${id}`).then((r) => r.json()),
+    49→    49→    enabled: !!id,
+    50→    50→  });
+    51→    51→
+    52→    52→  // Lista de instalaciones del cliente (para vínculo)
+    53→    53→  const { data: clientInstallations } = useQuery({
+    54→    54→    queryKey: ["client-installations-for-order", order?.clientId],
+    55→    55→    queryFn: async () => {
+    56→    56→      // No existe /api/installations, pero podemos obtenerlas vía /api/clients/[id]
+    57→    57→      const r = await fetch(`/api/clients/${order.clientId}`);
+    58→    58→      if (!r.ok) return [];
+    59→    59→      const data = await r.json();
+    60→    60→      return (data.installations ?? []) as any[];
+    61→    61→    },
+    62→    62→    enabled: !!order?.clientId,
+    63→    63→  });
+    64→    64→
+    65→    65→  useEffect(() => {
+    66→    66→    if (order && notesDraft === null) {
+    67→    67→      // eslint-disable-next-line react-hooks/set-state-in-effect
+    68→    68→      setNotesDraft(order.notes ?? "");
+    69→    69→    }
+    70→    70→  }, [order, notesDraft]);
+    71→    71→
+    72→    72→  const updateMut = useMutation({
+    73→    73→    mutationFn: async (payload: any) => {
+    74→    74→      const r = await fetch(`/api/sale-orders/${id}`, {
+    75→    75→        method: "PUT",
+    76→    76→        headers: { "Content-Type": "application/json" },
+    77→    77→        body: JSON.stringify(payload),
+    78→    78→      });
+    79→    79→      if (!r.ok) {
+    80→    80→        const e = await r.json().catch(() => ({}));
+    81→    81→        throw new Error(e.error ?? "Error al actualizar");
+    82→    82→      }
+    83→    83→      return r.json();
+    84→    84→    },
+    85→    85→    onSuccess: (_d, vars) => {
+    86→    86→      toast({
+    87→    87→        title:
+    88→    88→          vars.status !== undefined ? "Estado actualizado"
+    89→    89→          : vars.paymentStatus !== undefined ? "Estado de pago actualizado"
+    90→    90→          : "Pedido actualizado",
+    91→    91→      });
+    92→    92→      qc.invalidateQueries({ queryKey: ["sale-order", id] });
+    93→    93→      qc.invalidateQueries({ queryKey: ["sale-orders"] });
+    94→    94→    },
+    95→    95→    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    96→    96→  });
+    97→    97→
+    98→    98→  const installMut = useMutation({
+    99→    99→    mutationFn: async (items: InstallItem[]) => {
+   100→   100→      const r = await fetch(`/api/sale-orders/${id}/install`, {
+   101→   101→        method: "POST",
+   102→   102→        headers: { "Content-Type": "application/json" },
+   103→   103→        body: JSON.stringify({ items }),
+   104→   104→      });
+   105→   105→      if (!r.ok) {
+   106→   106→        const e = await r.json().catch(() => ({}));
+   107→   107→        throw new Error(e.error ?? "Error al registrar instalación");
+   108→   108→      }
+   109→   109→      return r.json();
+   110→   110→    },
+   111→   111→    onSuccess: (data) => {
+   112→   112→      toast({
+   113→   113→        title: "Pedido instalado",
+   114→   114→        description: `${data.installations.length} instalación(es) registradas`,
+   115→   115→      });
+   116→   116→      setShowInstall(false);
+   117→   117→      qc.invalidateQueries({ queryKey: ["sale-order", id] });
+   118→   118→      qc.invalidateQueries({ queryKey: ["sale-orders"] });
+   119→   119→    },
+   120→   120→    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+   121→   121→  });
+   122→   122→
+   123→   123→  if (isLoading || !order) {
+   124→   124→    return <div className="space-y-4"><Skeleton className="h-20" /><Skeleton className="h-96" /></div>;
+   125→   125→  }
+   126→   126→
+   127→   127→  const client = order.client;
+   128→   128→  const status = order.status;
+   129→   129→  const payment = order.paymentStatus;
+   130→   130→
+   131→   131→  const saveNotes = () => {
+   132→   132→    if (notesDraft !== null && notesDraft !== (order.notes ?? "")) {
+   133→   133→      updateMut.mutate({ notes: notesDraft || null });
+   134→   134→    }
+   135→   135→  };
+   136→   136→
+   137→   137→  return (
+   138→   138→    <div>
+   139→   139→      <PageHeader
+   140→   140→        title={order.number}
+   141→   141→        description={`Cliente: ${client?.name ?? "—"} · Emitido ${formatDate(order.issueDate)}`}
+   142→   142→        backTo="sale-orders"
+   143→   143→        actions={
+   144→   144→          <>
+   145→   145→            <DropdownMenu>
+   146→   146→              <DropdownMenuTrigger asChild>
+   147→   147→                <Button variant="outline" disabled={updateMut.isPending}>
+   148→   148→                  {updateMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronDown className="w-4 h-4 mr-2" />}
+   149→   149→                  Cambiar estado
+   150→   150→                </Button>
+   151→   151→              </DropdownMenuTrigger>
+   152→   152→              <DropdownMenuContent align="end">
+   153→   153→                <DropdownMenuLabel>Estado del pedido</DropdownMenuLabel>
+   154→   154→                <DropdownMenuSeparator />
+   155→   155→                {["PENDING", "IN_PROGRESS", "INSTALLED", "CLOSED"].map((s) => (
+   156→   156→                  <DropdownMenuItem
+   157→   157→                    key={s}
+   158→   158→                    onClick={() => updateMut.mutate({ status: s })}
+   159→   159→                    disabled={status === s}
+   160→   160→                    className="flex items-center justify-between"
+   161→   161→                  >
+   162→   162→                    <StatusBadge kind="saleOrder" value={s} />
+   163→   163→                    {status === s && <Check className="w-3.5 h-3.5" />}
+   164→   164→                  </DropdownMenuItem>
+   165→   165→                ))}
+   166→   166→              </DropdownMenuContent>
+   167→   167→            </DropdownMenu>
+   168→   168→
+   169→   169→            {status !== "INSTALLED" && status !== "CLOSED" && (
+   170→   170→              <Button onClick={() => setShowInstall(true)}>
+   171→   171→                <Wrench className="w-4 h-4 mr-2" /> Marcar instalado
+   172→   172→              </Button>
+   173→   173→            )}
+   174→   174→
+   175→   175→            <Button
+   176→   176→              variant={payment === "PAID" ? "default" : "outline"}
+   177→   177→              onClick={() => updateMut.mutate({ paymentStatus: payment === "PAID" ? "PENDING" : "PAID" })}
+   178→   178→              disabled={updateMut.isPending}
+   179→   179→            >
+   180→   180→              {payment === "PAID" ? (
+   181→   181→                <><Check className="w-4 h-4 mr-2" /> Cobrado</>
+   182→   182→              ) : (
+   183→   183→                <><Package className="w-4 h-4 mr-2" /> Marcar cobrado</>
+   184→   184→              )}
+   185→   185→            </Button>
+   186→   186→
+   187→   187→            <Button variant="outline" onClick={() => setView("incidents", { saleOrderId: id, clientId: order.clientId })}>
+   188→   188→              <Siren className="w-4 h-4 mr-2" /> Nueva incidencia
+   189→   189→            </Button>
+   190→   190→
+   191→   191→            <AttachmentUploader entityType="SALE_ORDER" entityId={id} label="Adjuntar albarán" onUploaded={() => qc.invalidateQueries({ queryKey: ["sale-order", id] })} />
+   192→   192→          </>
+   193→   193→        }
+   194→   194→      />
+   195→   195→
+   196→   196→      {/* Header card */}
+   197→   197→      <Card className="mb-4">
+   198→   198→        <CardContent className="p-4 sm:p-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   199→   199→          <div>
+   200→   200→            <div className="text-xs text-muted-foreground">Cliente</div>
+   201→   201→            <button
+   202→   202→              className="text-sm font-medium text-primary hover:underline truncate text-left"
+   203→   203→              onClick={() => setView("client-detail", { id: order.clientId })}
+   204→   204→            >
+   205→   205→              {client?.name ?? "—"}
+   206→   206→            </button>
+   207→   207→            <div className="text-xs text-muted-foreground mt-0.5">{fullAddress(client)}</div>
+   208→   208→          </div>
+   209→   209→          <div>
+   210→   210→            <div className="text-xs text-muted-foreground">Presupuesto de origen</div>
+   211→   211→            {order.sourceSaleQuote ? (
+   212→   212→              <button
+   213→   213→                className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+   214→   214→                onClick={() => setView("sale-quote-detail", { id: order.sourceSaleQuote.id })}
+   215→   215→              >
+   216→   216→                <FileText className="w-3.5 h-3.5" />
+   217→   217→                {order.sourceSaleQuote.number}
+   218→   218→              </button>
+   219→   219→            ) : (
+   220→   220→              <span className="text-sm text-muted-foreground">— Pedido directo —</span>
+   221→   221→            )}
+   222→   222→            {order.sourceSaleQuote && (
+   223→   223→              <div className="text-xs text-muted-foreground">Total presupuesto: {formatCurrency(order.sourceSaleQuote.total)}</div>
+   224→   224→            )}
+   225→   225→          </div>
+   226→   226→          <div>
+   227→   227→            <div className="text-xs text-muted-foreground">Emisión</div>
+   228→   228→            <div className="text-sm font-medium">{formatDate(order.issueDate)}</div>
+   229→   229→            {order.createdBy?.name && (
+   230→   230→              <div className="text-xs text-muted-foreground">Creado por {order.createdBy.name}</div>
+   231→   231→            )}
+   232→   232→          </div>
+   233→   233→          <div>
+   234→   234→            <div className="text-xs text-muted-foreground">Estado / Pago</div>
+   235→   235→            <div className="flex items-center gap-2 mt-0.5">
+   236→   236→              <StatusBadge kind="saleOrder" value={status} />
+   237→   237→              <StatusBadge kind="payment" value={payment} />
+   238→   238→            </div>
+   239→   239→          </div>
+   240→   240→        </CardContent>
+   241→   241→      </Card>
+   242→   242→
+   243→   243→      <div className="grid gap-4 lg:grid-cols-3">
+   244→   244→        {/* Columna principal */}
+   245→   245→        <div className="lg:col-span-2 space-y-4">
+   246→   246→          {/* Líneas */}
+   247→   247→          <Card>
+   248→   248→            <CardHeader className="pb-3">
+   249→   249→              <CardTitle className="text-base flex items-center gap-2">
+   250→   250→                <ClipboardList className="w-4 h-4 text-primary" /> Líneas
+   251→   251→              </CardTitle>
+   252→   252→            </CardHeader>
+   253→   253→            <CardContent className="p-0">
+   254→   254→              {(!order.lines || order.lines.length === 0) ? (
+   255→   255→                <div className="py-6 text-center text-sm text-muted-foreground">Sin líneas.</div>
+   256→   256→              ) : (
+   257→   257→                <div className="overflow-x-auto">
+   258→   258→                  <Table>
+   259→   259→                    <TableHeader>
+   260→   260→                      <TableRow>
+   261→   261→                        <TableHead>Descripción</TableHead>
+   262→   262→                        <TableHead className="w-20">Cant.</TableHead>
+   263→   263→                        <TableHead className="w-28">P. unit.</TableHead>
+   264→   264→                        <TableHead className="w-20">Desc.</TableHead>
+   265→   265→                        <TableHead className="w-32 text-right">Subtotal</TableHead>
+   266→   266→                      </TableRow>
+   267→   267→                    </TableHeader>
+   268→   268→                    <TableBody>
+   269→   269→                      {order.lines.map((l: any) => (
+   270→   270→                        <TableRow key={l.id} className={l.isLabor ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}>
+   271→   271→                          <TableCell>
+   272→   272→                            <div className="text-sm font-medium">{l.description}</div>
+   273→   273→                            {l.isLabor && <Badge variant="outline" className="mt-0.5 text-amber-700 border-amber-300">Mano de obra</Badge>}
+   274→   274→                            {l.article && (
+   275→   275→                              <div className="text-xs text-muted-foreground">{l.article.internalCode}</div>
+   276→   276→                            )}
+   277→   277→                          </TableCell>
+   278→   278→                          <TableCell className="text-sm">{l.quantity}</TableCell>
+   279→   279→                          <TableCell className="text-sm">{formatCurrency(l.unitPrice)}</TableCell>
+   280→   280→                          <TableCell className="text-sm">{l.discount}%</TableCell>
+   281→   281→                          <TableCell className="text-right font-semibold">{formatCurrency(l.subtotal)}</TableCell>
+   282→   282→                        </TableRow>
+   283→   283→                      ))}
+   284→   284→                    </TableBody>
+   285→   285→                  </Table>
+   286→   286→                </div>
+   287→   287→              )}
+   288→   288→              {order.lines && order.lines.length > 0 && (
+   289→   289→                <div className="flex justify-end p-4 border-t border-border">
+   290→   290→                  <div className="text-right">
+   291→   291→                    <div className="text-xs text-muted-foreground">Total pedido</div>
+   292→   292→                    <div className="text-lg font-bold">
+   293→   293→                      {formatCurrency(order.lines.reduce((s: number, l: any) => s + l.subtotal, 0))}
+   294→   294→                    </div>
+   295→   295→                  </div>
+   296→   296→                </div>
+   297→   297→              )}
+   298→   298→            </CardContent>
+   299→   299→          </Card>
+   300→   300→
+   301→   301→          {/* Instalaciones generadas */}
+   302→   302→          <Card>
+   303→   303→            <CardHeader className="pb-3 flex-row items-center justify-between">
+   304→   304→              <CardTitle className="text-base flex items-center gap-2">
+   305→   305→                <Wrench className="w-4 h-4 text-primary" /> Instalaciones generadas
+   306→   306→              </CardTitle>
+   307→   307→              {status !== "INSTALLED" && status !== "CLOSED" && (
+   308→   308→                <Button size="sm" variant="outline" onClick={() => setShowInstall(true)}>
+   309→   309→                  <Plus className="w-4 h-4 mr-1" /> Vincular / crear
+   310→   310→                </Button>
+   311→   311→              )}
+   312→   312→            </CardHeader>
+   313→   313→            <CardContent className="p-0">
+   314→   314→              {order.installations.length === 0 ? (
+   315→   315→                <div className="py-6 text-center text-sm text-muted-foreground">
+   316→   316→                  No hay instalaciones vinculadas. Marca el pedido como instalado para crearlas.
+   317→   317→                </div>
+   318→   318→              ) : (
+   319→   319→                <ul className="divide-y divide-border">
+   320→   320→                  {order.installations.map((i: any) => (
+   321→   321→                    <li key={i.id}>
+   322→   322→                      <button
+   323→   323→                        onClick={() => setView("installation-detail", { id: i.id })}
+   324→   324→                        className="w-full text-left py-3 px-4 hover:bg-accent flex items-center gap-3"
+   325→   325→                      >
+   326→   326→                        <Wrench className="w-4 h-4 text-primary shrink-0" />
+   327→   327→                        <div className="flex-1 min-w-0">
+   328→   328→                          <div className="text-sm font-medium truncate">
+   329→   329→                            {[i.brand, i.model].filter(Boolean).join(" ") || i.equipmentType}
+   330→   330→                          </div>
+   331→   331→                          <div className="text-xs text-muted-foreground">
+   332→   332→                            {i.serialNumber ? `S/N ${i.serialNumber}` : ""} · {i.location ?? ""}
+   333→   333→                          </div>
+   334→   334→                        </div>
+   335→   335→                        <StatusBadge kind="installation" value={i.status} />
+   336→   336→                      </button>
+   337→   337→                    </li>
+   338→   338→                  ))}
+   339→   339→                </ul>
+   340→   340→              )}
+   341→   341→            </CardContent>
+   342→   342→          </Card>
+   343→   343→
+   344→   344→          {/* Albaranes de entrega */}
+   345→   345→          <Card>
+   346→   346→            <CardHeader className="pb-3 flex-row items-center justify-between">
+   347→   347→              <CardTitle className="text-base flex items-center gap-2">
+   348→   348→                <Truck className="w-4 h-4 text-primary" /> Albaranes de entrega
+   349→   349→              </CardTitle>
+   350→   350→              <AttachmentUploader entityType="SALE_ORDER" entityId={id} variant="compact" onUploaded={() => qc.invalidateQueries({ queryKey: ["sale-order", id] })} />
+   351→   351→            </CardHeader>
+   352→   352→            <CardContent>
+   353→   353→              {order.deliveryAlbaranes && order.deliveryAlbaranes.length > 0 ? (
+   354→   354→                <div className="space-y-3">
+   355→   355→                  {order.deliveryAlbaranes.map((a: any) => (
+   356→   356→                    <div key={a.id} className="border border-border rounded-md p-3">
+   357→   357→                      <div className="flex items-center justify-between mb-2">
+   358→   358→                        <div>
+   359→   359→                          <div className="text-sm font-medium">Albarán · {formatDate(a.date)}</div>
+   360→   360→                          <div className="text-xs text-muted-foreground">Subido por {a.uploadedBy?.name ?? "—"}</div>
+   361→   361→                        </div>
+   362→   362→                        <Badge variant="outline">{a.notes ?? "CLIENT_DELIVERY"}</Badge>
+   363→   363→                      </div>
+   364→   364→                      {a.attachments && a.attachments.length > 0 && (
+   365→   365→                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+   366→   366→                          {a.attachments.map((f: any) => (
+   367→   367→                            <AttachmentThumb key={f.id} file={f} onDelete={async () => {
+   368→   368→                              await fetch(`/api/attachments/${f.id}`, { method: "DELETE" });
+   369→   369→                              qc.invalidateQueries({ queryKey: ["sale-order", id] });
+   370→   370→                            }} />
+   371→   371→                          ))}
+   372→   372→                        </div>
+   373→   373→                      )}
+   374→   374→                    </div>
+   375→   375→                  ))}
+   376→   376→                </div>
+   377→   377→              ) : order.attachments && order.attachments.length > 0 ? (
+   378→   378→                <div>
+   379→   379→                  <div className="text-xs text-muted-foreground mb-2">Adjuntos del pedido (no vinculados a albarán)</div>
+   380→   380→                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+   381→   381→                    {order.attachments.map((f: any) => (
+   382→   382→                      <AttachmentThumb key={f.id} file={f} onDelete={async () => {
+   383→   383→                        await fetch(`/api/attachments/${f.id}`, { method: "DELETE" });
+   384→   384→                        qc.invalidateQueries({ queryKey: ["sale-order", id] });
+   385→   385→                      }} />
+   386→   386→                    ))}
+   387→   387→                  </div>
+   388→   388→                </div>
+   389→   389→              ) : (
+   390→   390→                <div className="py-6 text-center text-sm text-muted-foreground">
+   391→   391→                  Sin albaranes de entrega. Adjunta fotos o PDF del parte de entrega.
+   392→   392→                </div>
+   393→   393→              )}
+   394→   394→            </CardContent>
+   395→   395→          </Card>
+   396→   396→        </div>
+   397→   397→
+   398→   398→        {/* Columna lateral */}
+   399→   399→        <div className="space-y-4">
+   400→   400→          {/* Compras vinculadas */}
+   401→   401→          <Card>
+   402→   402→            <CardHeader className="pb-3">
+   403→   403→              <CardTitle className="text-base flex items-center gap-2">
+   404→   404→                <FileInput className="w-4 h-4 text-primary" /> Compras vinculadas
+   405→   405→              </CardTitle>
+   406→   406→            </CardHeader>
+   407→   407→            <CardContent className="space-y-3">
+   408→   408→              <div>
+   409→   409→                <div className="text-xs text-muted-foreground mb-1">Presupuestos de compra</div>
+   410→   410→                {order.purchaseQuotes.length === 0 ? (
+   411→   411→                  <p className="text-xs text-muted-foreground">Sin presupuestos de compra.</p>
+   412→   412→                ) : (
+   413→   413→                  <ul className="divide-y divide-border border border-border rounded-md">
+   414→   414→                    {order.purchaseQuotes.map((q: any) => (
+   415→   415→                      <li key={q.id}>
+   416→   416→                        <button
+   417→   417→                          onClick={() => setView("purchase-quote-detail", { id: q.id })}
+   418→   418→                          className="w-full text-left py-2 px-3 hover:bg-accent flex items-center gap-2"
+   419→   419→                        >
+   420→   420→                          <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+   421→   421→                          <div className="min-w-0 flex-1">
+   422→   422→                            <div className="text-sm font-medium truncate">{q.supplier?.name}</div>
+   423→   423→                            <div className="text-xs text-muted-foreground">{formatDate(q.issueDate)}</div>
+   424→   424→                          </div>
+   425→   425→                          <StatusBadge kind="purchaseQuote" value={q.status} />
+   426→   426→                        </button>
+   427→   427→                      </li>
+   428→   428→                    ))}
+   429→   429→                  </ul>
+   430→   430→                )}
+   431→   431→              </div>
+   432→   432→              <div>
+   433→   433→                <div className="text-xs text-muted-foreground mb-1">Pedidos de compra</div>
+   434→   434→                {order.purchaseOrders.length === 0 ? (
+   435→   435→                  <p className="text-xs text-muted-foreground">Sin pedidos de compra.</p>
+   436→   436→                ) : (
+   437→   437→                  <ul className="divide-y divide-border border border-border rounded-md">
+   438→   438→                    {order.purchaseOrders.map((p: any) => (
+   439→   439→                      <li key={p.id}>
+   440→   440→                        <button
+   441→   441→                          onClick={() => setView("purchase-order-detail", { id: p.id })}
+   442→   442→                          className="w-full text-left py-2 px-3 hover:bg-accent flex items-center gap-2"
+   443→   443→                        >
+   444→   444→                          <Package className="w-3.5 h-3.5 text-primary shrink-0" />
+   445→   445→                          <div className="min-w-0 flex-1">
+   446→   446→                            <div className="text-sm font-medium truncate">{p.number}</div>
+   447→   447→                            <div className="text-xs text-muted-foreground">{p.supplier?.name}</div>
+   448→   448→                          </div>
+   449→   449→                          <StatusBadge kind="purchaseOrder" value={p.status} />
+   450→   450→                        </button>
+   451→   451→                      </li>
+   452→   452→                    ))}
+   453→   453→                  </ul>
+   454→   454→                )}
+   455→   455→              </div>
+   456→   456→            </CardContent>
+   457→   457→          </Card>
+   458→   458→
+   459→   459→          {/* Incidencias */}
+   460→   460→          <Card>
+   461→   461→            <CardHeader className="pb-3 flex-row items-center justify-between">
+   462→   462→              <CardTitle className="text-base flex items-center gap-2">
+   463→   463→                <Siren className="w-4 h-4 text-destructive" /> Incidencias
+   464→   464→              </CardTitle>
+   465→   465→              <Button size="sm" variant="ghost" onClick={() => setView("incidents", { saleOrderId: id, clientId: order.clientId })}>
+   466→   466→                <Plus className="w-4 h-4 mr-1" /> Nueva
+   467→   467→              </Button>
+   468→   468→            </CardHeader>
+   469→   469→            <CardContent className="p-0">
+   470→   470→              {order.incidents.length === 0 ? (
+   471→   471→                <p className="text-sm text-muted-foreground py-4 text-center">Sin incidencias.</p>
+   472→   472→              ) : (
+   473→   473→                <ul className="divide-y divide-border">
+   474→   474→                  {order.incidents.map((i: any) => (
+   475→   475→                    <li key={i.id}>
+   476→   476→                      <button
+   477→   477→                        onClick={() => setView("incident-detail", { id: i.id })}
+   478→   478→                        className="w-full text-left py-2 px-4 hover:bg-accent flex items-center gap-2"
+   479→   479→                      >
+   480→   480→                        <Siren className="w-3.5 h-3.5 text-destructive shrink-0" />
+   481→   481→                        <div className="min-w-0 flex-1">
+   482→   482→                          <div className="text-sm font-medium truncate">{i.number}</div>
+   483→   483→                          <div className="text-xs text-muted-foreground truncate">{i.description}</div>
+   484→   484→                        </div>
+   485→   485→                        <StatusBadge kind="incident" value={i.status} />
+   486→   486→                      </button>
+   487→   487→                    </li>
+   488→   488→                  ))}
+   489→   489→                </ul>
+   490→   490→              )}
+   491→   491→            </CardContent>
+   492→   492→          </Card>
+   493→   493→
+   494→   494→          {/* Notas */}
+   495→   495→          <Card>
+   496→   496→            <CardHeader className="pb-3 flex-row items-center justify-between">
+   497→   497→              <CardTitle className="text-base">Notas</CardTitle>
+   498→   498→              <Button size="sm" variant="ghost" onClick={saveNotes} disabled={updateMut.isPending}>
+   499→   499→                {updateMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+   500→   500→              </Button>
+   501→   501→            </CardHeader>
+   502→   502→            <CardContent>
+   503→   503→              <Textarea
+   504→   504→                value={notesDraft ?? ""}
+   505→   505→                onChange={(e) => setNotesDraft(e.target.value)}
+   506→   506→                onBlur={saveNotes}
+   507→   507→                rows={4}
+   508→   508→                placeholder="Notas internas del pedido..."
+   509→   509→              />
+   510→   510→            </CardContent>
+   511→   511→          </Card>
+   512→   512→        </div>
+   513→   513→      </div>
+   514→   514→
+   515→   515→      {/* Diálogo: marcar instalado */}
+   516→   516→      <InstallDialog
+   517→   517→        open={showInstall}
+   518→   518→        onOpenChange={setShowInstall}
+   519→   519→        loading={installMut.isPending}
+   520→   520→        clientId={order.clientId}
+   521→   521→        clientName={client?.name ?? ""}
+   522→   522→        availableInstallations={clientInstallations ?? []}
+   523→   523→        onSubmit={(items) => installMut.mutate(items)}
+   524→   524→      />
+   525→   525→    </div>
+   526→   526→  );
+   527→   527→}
+   528→   528→
+   529→   529→function InstallDialog({
+   530→   530→  open,
+   531→   531→  onOpenChange,
+   532→   532→  loading,
+   533→   533→  clientId,
+   534→   534→  clientName,
+   535→   535→  availableInstallations,
+   536→   536→  onSubmit,
+   537→   537→}: {
+   538→   538→  open: boolean;
+   539→   539→  onOpenChange: (v: boolean) => void;
+   540→   540→  loading: boolean;
+   541→   541→  clientId: string;
+   542→   542→  clientName: string;
+   543→   543→  availableInstallations: any[];
+   544→   544→  onSubmit: (items: InstallItem[]) => void;
+   545→   545→}) {
+   546→   546→  const [items, setItems] = useState<InstallItem[]>([
+   547→   547→    { mode: "new", clientId, equipmentType: "aire acondicionado", brand: "", model: "", serialNumber: "", location: "", warrantyEndDate: "", notes: "" },
+   548→   548→  ]);
+   549→   549→
+   550→   550→  useEffect(() => {
+   551→   551→    if (open) {
+   552→   552→      // eslint-disable-next-line react-hooks/set-state-in-effect
+   553→   553→      setItems([
+   554→   554→        { mode: "new", clientId, equipmentType: "aire acondicionado", brand: "", model: "", serialNumber: "", location: "", warrantyEndDate: "", notes: "" },
+   555→   555→      ]);
+   556→   556→    }
+   557→   557→  }, [open, clientId]);
+   558→   558→
+   559→   559→  const addNew = () => {
+   560→   560→    setItems((prev) => [
+   561→   561→      ...prev,
+   562→   562→      { mode: "new", clientId, equipmentType: "aire acondicionado", brand: "", model: "", serialNumber: "", location: "", warrantyEndDate: "", notes: "" },
+   563→   563→    ]);
+   564→   564→  };
+   565→   565→  const addLink = () => {
+   566→   566→    setItems((prev) => [...prev, { mode: "link", installationId: availableInstallations[0]?.id ?? "" }]);
+   567→   567→  };
+   568→   568→  const update = (idx: number, patch: any) => {
+   569→   569→    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } as InstallItem : it)));
+   570→   570→  };
+   571→   571→  const remove = (idx: number) => {
+   572→   572→    setItems((prev) => prev.filter((_, i) => i !== idx));
+   573→   573→  };
+   574→   574→
+   575→   575→  const submit = () => {
+   576→   576→    // Validar
+   577→   577→    for (const it of items) {
+   578→   578→      if (it.mode === "new") {
+   579→   579→        if (!it.equipmentType || !it.clientId) {
+   580→   580→          toast({ title: "Faltan datos en una instalación nueva", variant: "destructive" });
+   581→   581→          return;
+   582→   582→        }
+   583→   583→      } else if (!it.installationId) {
+   584→   584→        toast({ title: "Selecciona una instalación a vincular", variant: "destructive" });
+   585→   585→        return;
+   586→   586→      }
+   587→   587→    }
+   588→   588→    onSubmit(items);
+   589→   589→  };
+   590→   590→
+   591→   591→  // Filtrar instalaciones ya vinculadas a este pedido
+   592→   592→  const available = availableInstallations.filter(
+   593→   593→    (i) => !items.some((it) => it.mode === "link" && it.installationId === i.id)
+   594→   594→  );
+   595→   595→
+   596→   596→  return (
+   597→   597→    <Dialog open={open} onOpenChange={onOpenChange}>
+   598→   598→      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+   599→   599→        <DialogHeader>
+   600→   600→          <DialogTitle>Marcar pedido como instalado</DialogTitle>
+   601→   601→        </DialogHeader>
+   602→   602→        <p className="text-sm text-muted-foreground">
+   603→   603→          Cliente: <span className="font-medium text-foreground">{clientName}</span>. Registra los equipos instalados o vincula instalaciones ya existentes.
+   604→   604→        </p>
+   605→   605→
+   606→   606→        <div className="space-y-3">
+   607→   607→          {items.map((it, idx) => (
+   608→   608→            <div key={idx} className="border border-border rounded-md p-3 relative">
+   609→   609→              <div className="flex items-center justify-between mb-2">
+   610→   610→                <div className="text-xs uppercase text-muted-foreground font-semibold">
+   611→   611→                  {it.mode === "new" ? "Nueva instalación" : "Vincular existente"}
+   612→   612→                </div>
+   613→   613→                {items.length > 1 && (
+   614→   614→                  <Button size="sm" variant="ghost" onClick={() => remove(idx)}>
+   615→   615→                    Quitar
+   616→   616→                  </Button>
+   617→   617→                )}
+   618→   618→              </div>
+   619→   619→
+   620→   620→              <div className="flex items-center gap-2 mb-2">
+   621→   621→                <Label className="text-xs w-20">Modo</Label>
+   622→   622→                <Select
+   623→   623→                  value={it.mode}
+   624→   624→                  onValueChange={(v) => update(idx, v === "link" ? { mode: "link", installationId: available[0]?.id ?? "" } : { mode: "new", clientId, equipmentType: "aire acondicionado", brand: "", model: "", serialNumber: "", location: "", warrantyEndDate: "", notes: "" })}
+   625→   625→                >
+   626→   626→                  <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+   627→   627→                  <SelectContent>
+   628→   628→                    <SelectItem value="new">Crear nueva</SelectItem>
+   629→   629→                    <SelectItem value="link">Vincular existente</SelectItem>
+   630→   630→                  </SelectContent>
+   631→   631→                </Select>
+   632→   632→              </div>
+   633→   633→
+   634→   634→              {it.mode === "new" ? (
+   635→   635→                <div className="grid grid-cols-2 gap-2">
+   636→   636→                  <div className="col-span-2">
+   637→   637→                    <Label className="text-xs">Tipo de equipo *</Label>
+   638→   638→                    <Select
+   639→   639→                      value={(it as any).equipmentType}
+   640→   640→                      onValueChange={(v) => update(idx, { equipmentType: v })}
+   641→   641→                    >
+   642→   642→                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+   643→   643→                      <SelectContent>
+   644→   644→                        <SelectItem value="aire acondicionado">Aire acondicionado</SelectItem>
+   645→   645→                        <SelectItem value="caldera">Caldera</SelectItem>
+   646→   646→                        <SelectItem value="termo">Termo</SelectItem>
+   647→   647→                        <SelectItem value="otro">Otro</SelectItem>
+   648→   648→                      </SelectContent>
+   649→   649→                    </Select>
+   650→   650→                  </div>
+   651→   651→                  <div>
+   652→   652→                    <Label className="text-xs">Marca</Label>
+   653→   653→                    <Input value={(it as any).brand ?? ""} onChange={(e) => update(idx, { brand: e.target.value })} className="h-8" />
+   654→   654→                  </div>
+   655→   655→                  <div>
+   656→   656→                    <Label className="text-xs">Modelo</Label>
+   657→   657→                    <Input value={(it as any).model ?? ""} onChange={(e) => update(idx, { model: e.target.value })} className="h-8" />
+   658→   658→                  </div>
+   659→   659→                  <div>
+   660→   660→                    <Label className="text-xs">Nº de serie</Label>
+   661→   661→                    <Input value={(it as any).serialNumber ?? ""} onChange={(e) => update(idx, { serialNumber: e.target.value })} className="h-8" />
+   662→   662→                  </div>
+   663→   663→                  <div>
+   664→   664→                    <Label className="text-xs">Ubicación</Label>
+   665→   665→                    <Input value={(it as any).location ?? ""} onChange={(e) => update(idx, { location: e.target.value })} className="h-8" placeholder="Salón, cocina..." />
+   666→   666→                  </div>
+   667→   667→                  <div>
+   668→   668→                    <Label className="text-xs">Fin de garantía</Label>
+   669→   669→                    <Input type="date" value={(it as any).warrantyEndDate ?? ""} onChange={(e) => update(idx, { warrantyEndDate: e.target.value || null })} className="h-8" />
+   670→   670→                  </div>
+   671→   671→                  <div>
+   672→   672→                    <Label className="text-xs">Notas</Label>
+   673→   673→                    <Input value={(it as any).notes ?? ""} onChange={(e) => update(idx, { notes: e.target.value })} className="h-8" />
+   674→   674→                  </div>
+   675→   675→                </div>
+   676→   676→              ) : (
+   677→   677→                <div>
+   678→   678→                  <Label className="text-xs">Instalación a vincular *</Label>
+   679→   679→                  {available.length === 0 ? (
+   680→   680→                    <p className="text-xs text-muted-foreground mt-1">No hay instalaciones disponibles para vincular.</p>
+   681→   681→                  ) : (
+   682→   682→                    <Select
+   683→   683→                      value={(it as any).installationId}
+   684→   684→                      onValueChange={(v) => update(idx, { installationId: v })}
+   685→   685→                    >
+   686→   686→                      <SelectTrigger><SelectValue placeholder="Selecciona instalación" /></SelectTrigger>
+   687→   687→                      <SelectContent>
+   688→   688→                        {available.map((i: any) => (
+   689→   689→                          <SelectItem key={i.id} value={i.id}>
+   690→   690→                            {[i.brand, i.model, i.serialNumber].filter(Boolean).join(" ") || i.equipmentType}
+   691→   691→                          </SelectItem>
+   692→   692→                        ))}
+   693→   693→                      </SelectContent>
+   694→   694→                    </Select>
+   695→   695→                  )}
+   696→   696→                </div>
+   697→   697→              )}
+   698→   698→            </div>
+   699→   699→          ))}
+   700→   700→        </div>
+   701→   701→
+   702→   702→        <div className="flex gap-2">
+   703→   703→          <Button variant="outline" size="sm" onClick={addNew}><Plus className="w-4 h-4 mr-1" /> Otra nueva</Button>
+   704→   704→          <Button variant="outline" size="sm" onClick={addLink} disabled={available.length === 0}><Plus className="w-4 h-4 mr-1" /> Vincular existente</Button>
+   705→   705→        </div>
+   706→   706→
+   707→   707→        <DialogFooter>
+   708→   708→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+   709→   709→          <Button onClick={submit} disabled={loading || items.length === 0}>
+   710→   710→            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+   711→   711→            Marcar instalado
+   712→   712→          </Button>
+   713→   713→        </DialogFooter>
+   714→   714→      </DialogContent>
+   715→   715→    </Dialog>
+   716→   716→  );
+   717→   717→}
+   718→   718→

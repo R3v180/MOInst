@@ -1,0 +1,662 @@
+     1→"use client";
+     2→
+     3→import { useState } from "react";
+     4→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     5→import { useAppStore } from "@/store/app-store";
+     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+     7→import { Button } from "@/components/ui/button";
+     8→import { Input } from "@/components/ui/input";
+     9→import { Label } from "@/components/ui/label";
+    10→import { Textarea } from "@/components/ui/textarea";
+    11→import {
+    12→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    13→} from "@/components/ui/select";
+    14→import {
+    15→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+    16→} from "@/components/ui/dialog";
+    17→import { Skeleton } from "@/components/ui/skeleton";
+    18→import { PageHeader } from "@/components/shared/page-header";
+    19→import { StatusBadge } from "@/components/shared/status-badge";
+    20→import { EmptyState } from "@/components/shared/empty-state";
+    21→import {
+    22→  AttachmentUploader, AttachmentThumb,
+    23→} from "@/components/shared/attachment-uploader";
+    24→import { formatDate, daysUntil } from "@/lib/format";
+    25→import {
+    26→  Pencil, Save, Loader2, Plus, Wrench, MapPin, Calendar, ShieldCheck,
+    27→  ClipboardList, FileText, Siren, Trash2, Link2, ExternalLink,
+    28→} from "lucide-react";
+    29→import { toast } from "@/hooks/use-toast";
+    30→
+    31→const STATUS_OPTIONS = [
+    32→  { value: "ACTIVE", label: "Activa" },
+    33→  { value: "REMOVED", label: "Retirada" },
+    34→  { value: "REPLACED", label: "Sustituida" },
+    35→];
+    36→
+    37→export function InstallationDetailView() {
+    38→  const { params, setView } = useAppStore();
+    39→  const id = params.id;
+    40→  const qc = useQueryClient();
+    41→  const [editing, setEditing] = useState(false);
+    42→  const [draft, setDraft] = useState<any>(null);
+    43→  const [showMaint, setShowMaint] = useState(false);
+    44→
+    45→  const { data: inst, isLoading } = useQuery({
+    46→    queryKey: ["installation", id],
+    47→    queryFn: async () => {
+    48→      const r = await fetch(`/api/installations/${id}`);
+    49→      if (!r.ok) throw new Error("Error al cargar instalación");
+    50→      return r.json();
+    51→    },
+    52→    enabled: !!id,
+    53→  });
+    54→
+    55→  const { data: attsData, refetch: refetchAtts } = useQuery({
+    56→    queryKey: ["installation", id, "attachments"],
+    57→    queryFn: async () => {
+    58→      const r = await fetch(`/api/installations/${id}/attachments`);
+    59→      if (!r.ok) throw new Error("Error al cargar adjuntos");
+    60→      return r.json();
+    61→    },
+    62→    enabled: !!id,
+    63→  });
+    64→  const attachments = attsData?.items ?? [];
+    65→
+    66→  // Tipos de equipo (del listado meta) y meses por defecto
+    67→  const { data: listMeta } = useQuery({
+    68→    queryKey: ["installations", "", "all", "all", 1],
+    69→    queryFn: async () => {
+    70→      const r = await fetch(`/api/installations?pageSize=1`);
+    71→      if (!r.ok) return { meta: { installationTypes: [], defaultWarrantyMonths: 24 } };
+    72→      return r.json();
+    73→    },
+    74→    enabled: !!id,
+    75→  });
+    76→  const installationTypes: string[] =
+    77→    listMeta?.meta?.installationTypes ?? ["aire acondicionado", "caldera", "termo", "otro"];
+    78→
+    79→  const updateMut = useMutation({
+    80→    mutationFn: async (payload: any) => {
+    81→      const r = await fetch(`/api/installations/${id}`, {
+    82→        method: "PUT",
+    83→        headers: { "Content-Type": "application/json" },
+    84→        body: JSON.stringify(payload),
+    85→      });
+    86→      if (!r.ok) {
+    87→        const e = await r.json().catch(() => ({}));
+    88→        throw new Error(e.error ?? "Error al guardar");
+    89→      }
+    90→      return r.json();
+    91→    },
+    92→    onSuccess: () => {
+    93→      toast({ title: "Instalación actualizada" });
+    94→      setEditing(false);
+    95→      qc.invalidateQueries({ queryKey: ["installation", id] });
+    96→      qc.invalidateQueries({ queryKey: ["installations"] });
+    97→      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    98→    },
+    99→    onError: (e: any) =>
+   100→      toast({ title: "Error", description: e.message, variant: "destructive" }),
+   101→  });
+   102→
+   103→  const addMaintMut = useMutation({
+   104→    mutationFn: async (payload: any) => {
+   105→      const r = await fetch(`/api/installations/${id}/maintenances`, {
+   106→        method: "POST",
+   107→        headers: { "Content-Type": "application/json" },
+   108→        body: JSON.stringify(payload),
+   109→      });
+   110→      if (!r.ok) {
+   111→        const e = await r.json().catch(() => ({}));
+   112→        throw new Error(e.error ?? "Error al registrar mantenimiento");
+   113→      }
+   114→      return r.json();
+   115→    },
+   116→    onSuccess: () => {
+   117→      toast({ title: "Mantenimiento registrado" });
+   118→      setShowMaint(false);
+   119→      qc.invalidateQueries({ queryKey: ["installation", id] });
+   120→      qc.invalidateQueries({ queryKey: ["dashboard"] });
+   121→    },
+   122→    onError: (e: any) =>
+   123→      toast({ title: "Error", description: e.message, variant: "destructive" }),
+   124→  });
+   125→
+   126→  const deleteMaintMut = useMutation({
+   127→    mutationFn: async (mid: string) => {
+   128→      const r = await fetch(`/api/installations/${id}/maintenances/${mid}`, {
+   129→        method: "DELETE",
+   130→      });
+   131→      if (!r.ok) throw new Error("Error al borrar mantenimiento");
+   132→      return r.json();
+   133→    },
+   134→    onSuccess: () => {
+   135→      toast({ title: "Mantenimiento eliminado" });
+   136→      qc.invalidateQueries({ queryKey: ["installation", id] });
+   137→    },
+   138→    onError: (e: any) =>
+   139→      toast({ title: "Error", description: e.message, variant: "destructive" }),
+   140→  });
+   141→
+   142→  if (isLoading || !inst) {
+   143→    return (
+   144→      <div className="space-y-4">
+   145→        <Skeleton className="h-20" />
+   146→        <div className="grid gap-4 lg:grid-cols-2">
+   147→          <Skeleton className="h-64" />
+   148→          <Skeleton className="h-64" />
+   149→        </div>
+   150→      </div>
+   151→    );
+   152→  }
+   153→
+   154→  const warrantyDays = daysUntil(inst.warrantyEndDate);
+   155→  const warrantyExpired = warrantyDays !== null && warrantyDays < 0;
+   156→  const warrantySoon = warrantyDays !== null && warrantyDays >= 0 && warrantyDays < 30;
+   157→  const title = [inst.brand, inst.model].filter(Boolean).join(" ") || inst.equipmentType;
+   158→
+   159→  const openEdit = () => {
+   160→    setDraft({
+   161→      equipmentType: inst.equipmentType ?? "",
+   162→      brand: inst.brand ?? "",
+   163→      model: inst.model ?? "",
+   164→      serialNumber: inst.serialNumber ?? "",
+   165→      location: inst.location ?? "",
+   166→      installDate: inst.installDate ? new Date(inst.installDate).toISOString().slice(0, 10) : "",
+   167→      warrantyEndDate: inst.warrantyEndDate ? new Date(inst.warrantyEndDate).toISOString().slice(0, 10) : "",
+   168→      status: inst.status ?? "ACTIVE",
+   169→      notes: inst.notes ?? "",
+   170→    });
+   171→    setEditing(true);
+   172→  };
+   173→
+   174→  return (
+   175→    <div>
+   176→      <PageHeader
+   177→        title={title}
+   178→        description={`${inst.equipmentType}${inst.client ? ` · ${inst.client.name}` : ""}`}
+   179→        backTo="installations"
+   180→        actions={
+   181→          <>
+   182→            <Button variant="outline" onClick={openEdit}>
+   183→              <Pencil className="w-4 h-4 mr-2" /> Editar
+   184→            </Button>
+   185→            <Button variant="outline" onClick={() => setView("incidents")}>
+   186→              <Siren className="w-4 h-4 mr-2" /> Nueva incidencia
+   187→            </Button>
+   188→            <Button onClick={() => setShowMaint(true)}>
+   189→              <Plus className="w-4 h-4 mr-2" /> Nuevo mantenimiento
+   190→            </Button>
+   191→          </>
+   192→        }
+   193→      />
+   194→
+   195→      {/* Trazabilidad */}
+   196→      {inst.sourceSaleOrder && (
+   197→        <Card className="mb-4 border-primary/30 bg-primary/5">
+   198→          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+   199→            <div className="flex items-center gap-2 text-primary">
+   200→              <Link2 className="w-5 h-5" />
+   201→              <span className="text-sm font-semibold">Trazabilidad</span>
+   202→            </div>
+   203→            <div className="flex-1 min-w-0 text-sm">
+   204→              Equipo instalado desde el pedido de venta{" "}
+   205→              <button
+   206→                onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+   207→                className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
+   208→              >
+   209→                {inst.sourceSaleOrder.number}
+   210→                <ExternalLink className="w-3 h-3" />
+   211→              </button>
+   212→              {inst.sourceSaleOrder.client && (
+   213→                <span className="text-muted-foreground"> · {inst.sourceSaleOrder.client.name}</span>
+   214→              )}
+   215→              <div className="text-xs text-muted-foreground mt-0.5">
+   216→                Desde el pedido puedes ver presupuestos de compra y pedidos a proveedores asociados.
+   217→              </div>
+   218→            </div>
+   219→            <Button
+   220→              variant="outline"
+   221→              size="sm"
+   222→              onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+   223→            >
+   224→              Ver pedido
+   225→            </Button>
+   226→          </CardContent>
+   227→        </Card>
+   228→      )}
+   229→
+   230→      <div className="grid gap-4 lg:grid-cols-2">
+   231→        {/* Columna izquierda: datos */}
+   232→        <Card>
+   233→          <CardHeader>
+   234→            <CardTitle className="flex items-center gap-2">
+   235→              <Wrench className="w-5 h-5 text-primary" />
+   236→              Datos del equipo
+   237→            </CardTitle>
+   238→            <CardDescription>Información técnica y de instalación</CardDescription>
+   239→          </CardHeader>
+   240→          <CardContent className="grid gap-4 sm:grid-cols-2">
+   241→            <Info label="Cliente" icon={<span />} className="sm:col-span-2">
+   242→              {inst.client ? (
+   243→                <button
+   244→                  onClick={() => setView("client-detail", { id: inst.client.id })}
+   245→                  className="text-primary hover:underline font-medium"
+   246→                >
+   247→                  {inst.client.name}
+   248→                </button>
+   249→              ) : "—"}
+   250→            </Info>
+   251→            <Info label="Tipo de equipo">
+   252→              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+   253→                <Wrench className="w-3 h-3" /> {inst.equipmentType}
+   254→              </span>
+   255→            </Info>
+   256→            <Info label="Estado"><StatusBadge kind="installation" value={inst.status} /></Info>
+   257→            <Info label="Marca">{inst.brand || "—"}</Info>
+   258→            <Info label="Modelo">{inst.model || "—"}</Info>
+   259→            <Info label="Nº de serie">
+   260→              <span className="font-mono text-sm">{inst.serialNumber || "—"}</span>
+   261→            </Info>
+   262→            <Info label="Ubicación" icon={<MapPin className="w-3.5 h-3.5" />}>
+   263→              {inst.location || "—"}
+   264→            </Info>
+   265→            <Info label="Fecha de instalación" icon={<Calendar className="w-3.5 h-3.5" />}>
+   266→              {formatDate(inst.installDate)}
+   267→            </Info>
+   268→            <Info label="Fin de garantía" icon={<ShieldCheck className="w-3.5 h-3.5" />}>
+   269→              {inst.warrantyEndDate ? (
+   270→                <span className={
+   271→                  warrantyExpired
+   272→                    ? "text-destructive font-medium"
+   273→                    : warrantySoon
+   274→                      ? "text-amber-600 dark:text-amber-400 font-medium"
+   275→                      : ""
+   276→                }>
+   277→                  {formatDate(inst.warrantyEndDate)}
+   278→                  {warrantyExpired
+   279→                    ? " · caducada"
+   280→                    : warrantySoon
+   281→                      ? ` · en ${warrantyDays}d`
+   282→                      : ` · en ${warrantyDays}d`}
+   283→                </span>
+   284→              ) : "—"}
+   285→            </Info>
+   286→            <Info label="Pedido de venta origen" className="sm:col-span-2">
+   287→              {inst.sourceSaleOrder ? (
+   288→                <button
+   289→                  onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+   290→                  className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
+   291→                >
+   292→                  <ClipboardList className="w-3.5 h-3.5" />
+   293→                  {inst.sourceSaleOrder.number}
+   294→                </button>
+   295→              ) : <span className="text-muted-foreground">Sin pedido asociado</span>}
+   296→            </Info>
+   297→            <Info label="Notas internas" className="sm:col-span-2">
+   298→              <span className="text-sm whitespace-pre-wrap">{inst.notes || "—"}</span>
+   299→            </Info>
+   300→            <div className="sm:col-span-2 pt-3 border-t border-border text-xs text-muted-foreground">
+   301→              Creada por {inst.createdBy?.name ?? "—"} el {formatDate(inst.createdAt)}
+   302→            </div>
+   303→          </CardContent>
+   304→        </Card>
+   305→
+   306→        {/* Columna derecha: galería de fotos */}
+   307→        <Card>
+   308→          <CardHeader>
+   309→            <CardTitle className="flex items-center gap-2">
+   310→              <FileText className="w-5 h-5 text-primary" />
+   311→              Fotos y documentos
+   312→            </CardTitle>
+   313→            <CardDescription>Adjuntos del equipo (fotos, etiquetas, partes)</CardDescription>
+   314→          </CardHeader>
+   315→          <CardContent className="space-y-3">
+   316→            <AttachmentUploader
+   317→              entityType="INSTALLATION"
+   318→              entityId={id}
+   319→              accept="image/*,application/pdf"
+   320→              onUploaded={() => refetchAtts()}
+   321→            />
+   322→            {attachments.length === 0 ? (
+   323→              <p className="text-sm text-muted-foreground py-6 text-center">
+   324→                Sin adjuntos. Sube fotos de la instalación, etiqueta de serie, partes de trabajo...
+   325→              </p>
+   326→            ) : (
+   327→              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+   328→                {attachments.map((a: any) => (
+   329→                  <AttachmentThumb
+   330→                    key={a.id}
+   331→                    file={a}
+   332→                    onDelete={async () => {
+   333→                      try {
+   334→                        const r = await fetch(`/api/attachments/${a.id}`, { method: "DELETE" });
+   335→                        if (!r.ok) throw new Error();
+   336→                        toast({ title: "Adjunto eliminado" });
+   337→                        refetchAtts();
+   338→                      } catch {
+   339→                        toast({ title: "Error al borrar", variant: "destructive" });
+   340→                      }
+   341→                    }}
+   342→                  />
+   343→                ))}
+   344→              </div>
+   345→            )}
+   346→          </CardContent>
+   347→        </Card>
+   348→      </div>
+   349→
+   350→      <div className="grid gap-4 lg:grid-cols-2 mt-4">
+   351→        {/* Historial de mantenimientos */}
+   352→        <Card>
+   353→          <CardHeader>
+   354→            <CardTitle className="flex items-center justify-between">
+   355→              <span className="flex items-center gap-2">
+   356→                <Wrench className="w-5 h-5 text-primary" />
+   357→                Historial de mantenimientos
+   358→              </span>
+   359→              <Button size="sm" variant="outline" onClick={() => setShowMaint(true)}>
+   360→                <Plus className="w-4 h-4 mr-1" /> Añadir
+   361→              </Button>
+   362→            </CardTitle>
+   363→          </CardHeader>
+   364→          <CardContent className="p-0">
+   365→            {!inst.maintenances || inst.maintenances.length === 0 ? (
+   366→              <p className="text-sm text-muted-foreground py-6 text-center">
+   367→                Sin mantenimientos registrados.
+   368→              </p>
+   369→            ) : (
+   370→              <ul className="divide-y divide-border max-h-96 overflow-y-auto scroll-thin">
+   371→                {inst.maintenances.map((m: any) => {
+   372→                  const next = daysUntil(m.nextReviewDate);
+   373→                  const nextSoon = next !== null && next >= 0 && next < 30;
+   374→                  const nextPast = next !== null && next < 0;
+   375→                  return (
+   376→                    <li key={m.id} className="p-4 flex gap-3">
+   377→                      <div className="shrink-0 w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+   378→                        <Calendar className="w-5 h-5" />
+   379→                      </div>
+   380→                      <div className="min-w-0 flex-1">
+   381→                        <div className="flex items-center justify-between gap-2">
+   382→                          <div className="text-sm font-medium">{formatDate(m.date)}</div>
+   383→                          <button
+   384→                            onClick={() => deleteMaintMut.mutate(m.id)}
+   385→                            className="text-muted-foreground hover:text-destructive transition-colors"
+   386→                            title="Eliminar mantenimiento"
+   387→                          >
+   388→                            <Trash2 className="w-3.5 h-3.5" />
+   389→                          </button>
+   390→                        </div>
+   391→                        {m.nextReviewDate && (
+   392→                          <div className={
+   393→                            "text-xs " + (nextPast
+   394→                              ? "text-destructive"
+   395→                              : nextSoon
+   396→                                ? "text-amber-600 dark:text-amber-400"
+   397→                                : "text-muted-foreground")
+   398→                          }>
+   399→                            Próxima revisión: {formatDate(m.nextReviewDate)}
+   400→                            {nextPast ? " · vencida" : nextSoon ? ` · en ${next}d` : ` · en ${next}d`}
+   401→                          </div>
+   402→                        )}
+   403→                        {m.notes && (
+   404→                          <div className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{m.notes}</div>
+   405→                        )}
+   406→                        <div className="text-xs text-muted-foreground mt-1">
+   407→                          Realizado por {m.performedBy?.name ?? "—"}
+   408→                        </div>
+   409→                      </div>
+   410→                    </li>
+   411→                  );
+   412→                })}
+   413→              </ul>
+   414→            )}
+   415→          </CardContent>
+   416→        </Card>
+   417→
+   418→        {/* Incidencias de esta instalación */}
+   419→        <Card>
+   420→          <CardHeader>
+   421→            <CardTitle className="flex items-center justify-between">
+   422→              <span className="flex items-center gap-2">
+   423→                <Siren className="w-5 h-5 text-destructive" />
+   424→                Incidencias
+   425→              </span>
+   426→              <Button size="sm" variant="outline" onClick={() => setView("incidents")}>
+   427→                <Plus className="w-4 h-4 mr-1" /> Nueva
+   428→              </Button>
+   429→            </CardTitle>
+   430→          </CardHeader>
+   431→          <CardContent className="p-0">
+   432→            {!inst.incidents || inst.incidents.length === 0 ? (
+   433→              <p className="text-sm text-muted-foreground py-6 text-center">
+   434→                Sin incidencias registradas para esta instalación.
+   435→              </p>
+   436→            ) : (
+   437→              <ul className="divide-y divide-border max-h-96 overflow-y-auto scroll-thin">
+   438→                {inst.incidents.map((i: any) => (
+   439→                  <li key={i.id}>
+   440→                    <button
+   441→                      onClick={() => setView("incident-detail", { id: i.id })}
+   442→                      className="w-full text-left p-4 hover:bg-accent transition-colors flex items-center gap-3"
+   443→                    >
+   444→                      <div className="shrink-0 w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
+   445→                        <Siren className="w-5 h-5" />
+   446→                      </div>
+   447→                      <div className="min-w-0 flex-1">
+   448→                        <div className="flex items-center justify-between gap-2">
+   449→                          <div className="text-sm font-medium">{i.number}</div>
+   450→                          <StatusBadge kind="incident" value={i.status} />
+   451→                        </div>
+   452→                        <div className="text-xs text-muted-foreground truncate">
+   453→                          {formatDate(i.openedAt)} · {i.description?.slice(0, 80)}
+   454→                          {i.description && i.description.length > 80 ? "…" : ""}
+   455→                        </div>
+   456→                      </div>
+   457→                    </button>
+   458→                  </li>
+   459→                ))}
+   460→              </ul>
+   461→            )}
+   462→          </CardContent>
+   463→        </Card>
+   464→      </div>
+   465→
+   466→      {/* Presupuestos asociados */}
+   467→      {inst.saleQuotes && inst.saleQuotes.length > 0 && (
+   468→        <Card className="mt-4">
+   469→          <CardHeader>
+   470→            <CardTitle className="flex items-center gap-2">
+   471→              <FileText className="w-5 h-5 text-primary" />
+   472→              Presupuestos relacionados
+   473→            </CardTitle>
+   474→          </CardHeader>
+   475→          <CardContent className="p-0">
+   476→            <ul className="divide-y divide-border">
+   477→              {inst.saleQuotes.map((q: any) => (
+   478→                <li key={q.id}>
+   479→                  <button
+   480→                    onClick={() => setView("sale-quote-detail", { id: q.id })}
+   481→                    className="w-full text-left p-4 hover:bg-accent transition-colors flex items-center gap-3"
+   482→                  >
+   483→                    <FileText className="w-4 h-4 text-primary shrink-0" />
+   484→                    <div className="min-w-0 flex-1">
+   485→                      <div className="text-sm font-medium">{q.number}</div>
+   486→                      <div className="text-xs text-muted-foreground">{formatDate(q.issueDate)}</div>
+   487→                    </div>
+   488→                    <StatusBadge kind="saleQuote" value={q.status} />
+   489→                  </button>
+   490→                </li>
+   491→              ))}
+   492→            </ul>
+   493→          </CardContent>
+   494→        </Card>
+   495→      )}
+   496→
+   497→      {/* Diálogo de edición */}
+   498→      <Dialog open={editing} onOpenChange={setEditing}>
+   499→        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto scroll-thin">
+   500→          <DialogHeader>
+   501→            <DialogTitle>Editar instalación</DialogTitle>
+   502→          </DialogHeader>
+   503→          {draft && (
+   504→            <div className="space-y-3">
+   505→              <div className="grid grid-cols-2 gap-3">
+   506→                <div>
+   507→                  <Label>Tipo de equipo</Label>
+   508→                  <Select
+   509→                    value={draft.equipmentType}
+   510→                    onValueChange={(v) => setDraft({ ...draft, equipmentType: v })}
+   511→                  >
+   512→                    <SelectTrigger><SelectValue /></SelectTrigger>
+   513→                    <SelectContent>
+   514→                      {installationTypes.map((t: string) => (
+   515→                        <SelectItem key={t} value={t}>{t}</SelectItem>
+   516→                      ))}
+   517→                    </SelectContent>
+   518→                  </Select>
+   519→                </div>
+   520→                <div>
+   521→                  <Label>Estado</Label>
+   522→                  <Select
+   523→                    value={draft.status}
+   524→                    onValueChange={(v) => setDraft({ ...draft, status: v })}
+   525→                  >
+   526→                    <SelectTrigger><SelectValue /></SelectTrigger>
+   527→                    <SelectContent>
+   528→                      {STATUS_OPTIONS.map((s) => (
+   529→                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+   530→                      ))}
+   531→                    </SelectContent>
+   532→                  </Select>
+   533→                </div>
+   534→              </div>
+   535→              <div className="grid grid-cols-2 gap-3">
+   536→                <div><Label>Marca</Label><Input value={draft.brand} onChange={(e) => setDraft({ ...draft, brand: e.target.value })} /></div>
+   537→                <div><Label>Modelo</Label><Input value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })} /></div>
+   538→              </div>
+   539→              <div className="grid grid-cols-2 gap-3">
+   540→                <div><Label>Nº de serie</Label><Input value={draft.serialNumber} onChange={(e) => setDraft({ ...draft, serialNumber: e.target.value })} /></div>
+   541→                <div><Label>Ubicación</Label><Input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} /></div>
+   542→              </div>
+   543→              <div className="grid grid-cols-2 gap-3">
+   544→                <div>
+   545→                  <Label>Fecha de instalación</Label>
+   546→                  <Input type="date" value={draft.installDate} onChange={(e) => setDraft({ ...draft, installDate: e.target.value })} />
+   547→                </div>
+   548→                <div>
+   549→                  <Label>Fin de garantía</Label>
+   550→                  <Input type="date" value={draft.warrantyEndDate} onChange={(e) => setDraft({ ...draft, warrantyEndDate: e.target.value })} />
+   551→                </div>
+   552→              </div>
+   553→              <div>
+   554→                <Label>Notas internas</Label>
+   555→                <Textarea rows={3} value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+   556→              </div>
+   557→            </div>
+   558→          )}
+   559→          <DialogFooter>
+   560→            <Button variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>
+   561→            <Button
+   562→              onClick={() => updateMut.mutate(draft)}
+   563→              disabled={updateMut.isPending}
+   564→            >
+   565→              {updateMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+   566→              Guardar
+   567→            </Button>
+   568→          </DialogFooter>
+   569→        </DialogContent>
+   570→      </Dialog>
+   571→
+   572→      {/* Diálogo nuevo mantenimiento */}
+   573→      <MaintenanceForm
+   574→        key={`maint-${showMaint}`}
+   575→        open={showMaint}
+   576→        onOpenChange={setShowMaint}
+   577→        onSubmit={(d) => addMaintMut.mutate(d)}
+   578→        loading={addMaintMut.isPending}
+   579→        defaultDate={new Date().toISOString().slice(0, 10)}
+   580→      />
+   581→    </div>
+   582→  );
+   583→}
+   584→
+   585→// ─────────────────────────────────────────────────────────────────────────────
+   586→// Sub-componentes
+   587→// ─────────────────────────────────────────────────────────────────────────────
+   588→function Info({
+   589→  label, children, icon, className,
+   590→}: {
+   591→  label: string;
+   592→  children?: React.ReactNode;
+   593→  icon?: React.ReactNode;
+   594→  className?: string;
+   595→}) {
+   596→  return (
+   597→    <div className={className}>
+   598→      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+   599→        {icon}{label}
+   600→      </div>
+   601→      <div className="text-sm font-medium mt-0.5">{children ?? "—"}</div>
+   602→    </div>
+   603→  );
+   604→}
+   605→
+   606→function MaintenanceForm({
+   607→  open, onOpenChange, onSubmit, loading, defaultDate,
+   608→}: {
+   609→  open: boolean;
+   610→  onOpenChange: (v: boolean) => void;
+   611→  onSubmit: (d: any) => void;
+   612→  loading: boolean;
+   613→  defaultDate: string;
+   614→}) {
+   615→  const [d, setD] = useState<any>({ date: defaultDate, nextReviewDate: "", notes: "" });
+   616→
+   617→  const submit = () => {
+   618→    if (!d.date) {
+   619→      toast({ title: "Indica la fecha del mantenimiento", variant: "destructive" });
+   620→      return;
+   621→    }
+   622→    onSubmit({
+   623→      date: d.date,
+   624→      nextReviewDate: d.nextReviewDate || null,
+   625→      notes: d.notes || null,
+   626→    });
+   627→  };
+   628→
+   629→  return (
+   630→    <Dialog open={open} onOpenChange={onOpenChange}>
+   631→      <DialogContent>
+   632→        <DialogHeader>
+   633→          <DialogTitle>Nuevo mantenimiento</DialogTitle>
+   634→        </DialogHeader>
+   635→        <div className="space-y-3">
+   636→          <div className="grid grid-cols-2 gap-3">
+   637→            <div>
+   638→              <Label>Fecha *</Label>
+   639→              <Input type="date" value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} />
+   640→            </div>
+   641→            <div>
+   642→              <Label>Próxima revisión</Label>
+   643→              <Input type="date" value={d.nextReviewDate} onChange={(e) => setD({ ...d, nextReviewDate: e.target.value })} />
+   644→            </div>
+   645→          </div>
+   646→          <div>
+   647→            <Label>Notas</Label>
+   648→            <Textarea rows={3} value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} placeholder="Trabajo realizado, piezas cambiadas, observaciones..." />
+   649→          </div>
+   650→        </div>
+   651→        <DialogFooter>
+   652→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+   653→          <Button onClick={submit} disabled={loading}>
+   654→            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+   655→            Guardar
+   656→          </Button>
+   657→        </DialogFooter>
+   658→      </DialogContent>
+   659→    </Dialog>
+   660→  );
+   661→}
+   662→
