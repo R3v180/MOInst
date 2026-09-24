@@ -35,8 +35,11 @@ export function LoginScreen() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary/10 via-background to-accent/20">
-      <div className="flex-1 flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary/10 via-background to-accent/20 relative overflow-hidden">
+      {/* Decorative background shapes */}
+      <div className="absolute top-0 -left-20 w-72 h-72 bg-primary/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 -right-20 w-96 h-96 bg-accent/20 rounded-full blur-3xl" />
+      <div className="flex-1 flex items-center justify-center p-4 relative">
         <div className="w-full max-w-md">
           <div className="flex flex-col items-center mb-8">
             <div className="grid grid-cols-2 gap-1 p-3 rounded-2xl bg-primary text-primary-foreground shadow-xl mb-4">
@@ -49,7 +52,7 @@ export function LoginScreen() {
             </p>
           </div>
 
-          <Card className="shadow-lg border-border/60">
+          <Card className="shadow-lg border-border/60 backdrop-blur-sm bg-card/95">
             <CardHeader>
               <CardTitle className="text-xl">Iniciar sesión</CardTitle>
               <CardDescription>Acceso para los socios</CardDescription>

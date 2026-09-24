@@ -34,6 +34,9 @@ export function AiChatPanel() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("Analizando tu consulta...");
+  const [loadingStepIdx, setLoadingStepIdx] = useState(0);
+  const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, "pending" | "done" | "error">>({});
   const [actionResults, setActionResults] = useState<Record<string, any>>({});
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
@@ -58,6 +61,16 @@ export function AiChatPanel() {
     const next = [...messages, { role: "user", content: displayContent } as ChatMessage];
     setMessages(next);
     setLoading(true);
+    // Indicador de progreso: cicla por mensajes cada 3.5s
+    const steps = ["Analizando tu consulta...", "Consultando la base de datos...", "Preparando respuesta..."];
+    setLoadingStep(steps[0]);
+    setLoadingStepIdx(0);
+    let stepI = 0;
+    loadingTimerRef.current = setInterval(() => {
+      stepI = Math.min(stepI + 1, steps.length - 1);
+      setLoadingStep(steps[stepI]);
+      setLoadingStepIdx(stepI);
+    }, 3500);
 
     const history = next.slice(1).map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
@@ -92,6 +105,10 @@ export function AiChatPanel() {
     } catch (e: any) {
       setMessages((p) => [...p, { role: "assistant", content: `Error: ${e.message}` }]);
     } finally {
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current);
+        loadingTimerRef.current = null;
+      }
       setLoading(false);
     }
   }
@@ -270,8 +287,23 @@ export function AiChatPanel() {
                   <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center">
                     <Bot className="w-4 h-4" />
                   </div>
-                  <div className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
-                    <Loader2 className="w-3 h-3 animate-spin" /> pensando...
+                  <div className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-muted-foreground space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span className="animate-pulse-soft">{loadingStep}</span>
+                    </div>
+                    {/* Indicador visual de pasos */}
+                    <div className="flex items-center gap-1">
+                      {["Analizando", "Consultando", "Preparando"].map((s, i) => (
+                        <div
+                          key={s}
+                          className={cn(
+                            "h-1 rounded-full transition-all",
+                            loadingStepIdx > i ? "w-6 bg-primary" : loadingStepIdx === i ? "w-8 bg-primary/60 animate-pulse" : "w-6 bg-muted"
+                          )}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

@@ -727,3 +727,42 @@ Stage Summary:
   * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-REVIEW-6
+Agent: main (cron webDevReview)
+Task: QA + AI progress indicator + login screen styling polish
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con donut chart + quick actions + stock card + actividad reciente ✓. Navegación 14 módulos ✓. 0 errores runtime, 0 TypeError. IA consulta lectura ✓ ("Hay **1 cliente** en la base de datos"). Estado ESTABLE.
+
+FEATURES NUEVAS:
+1. **AI progress indicator** (`src/components/app/ai-chat-panel.tsx`):
+   - Durante el bucle agéntico (que puede tardar 20-25s), el panel muestra ahora un indicador de progreso en lugar del simple "pensando...".
+   - 3 mensajes cíclicos cada 3.5s: "Analizando tu consulta..." → "Consultando la base de datos..." → "Preparando respuesta...".
+   - Barra visual de 3 segmentos (Analizando/Consultando/Preparando) con estados: completado (bg-primary), activo (bg-primary/60 + animate-pulse + más ancho), pendiente (bg-muted).
+   - Intervalo limpia en `finally` del send() (clearInterval).
+   - Verificado E2E: "PROGRESS ✓" — los mensajes "Analizando"/"Consultando"/"Preparando" son visibles durante la espera.
+
+2. **Login screen styling polish** (`src/components/app/login-screen.tsx`):
+   - 2 formas decorativas de fondo (blur-3xl): círculo teal arriba-izquierda + círculo ámbar abajo-derecha.
+   - Card con `backdrop-blur-sm bg-card/95` (efecto glassmorphism sutil).
+   - Layout con `relative overflow-hidden` para contener las shapes.
+   - Verificado: "2 blur shapes" detectadas en el DOM del login.
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login screen: 2 blur shapes decorativas ✓, screenshot /home/z/my-project/download/moinst-login-v6.png.
+- Post-login: dashboard con charts ✓. Navegación 5 módulos (Clientes, Presupuestos venta, Artículos, Agenda, Ajustes): todos cargan ✓.
+- IA progress indicator: "PROGRESS ✓" visible durante la espera (Analizando/Consultando/Preparando). Respuesta final correcta.
+- Lint: 0 errores.
+- Screenshot dashboard: /home/z/my-project/download/moinst-dashboard-v7.png.
+
+Stage Summary:
+- Estado: ESTABLE. 2 features nuevas (AI progress indicator, login screen glassmorphism). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El AI progress indicator es simulado (cicla cada 3.5s fijo) — no refleja el progreso real del bucle agéntico. Mejora: hacer streaming del backend para mostrar el paso real.
+  * El bucle agéntico sigue tardando 20-25s para acciones complejas. Considerar reducir MAX_ROUNDS o pre-cachear contexto.
+  * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.
