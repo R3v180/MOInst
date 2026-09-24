@@ -161,7 +161,7 @@ export function PurchaseOrderDetailView() {
         <CardContent className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <InfoBlock label="Proveedor">
             <button
-              onClick={() => setView("supplier-detail", { id: order.supplier.id })}
+              onClick={() => setView("supplier-detail", { id: order.supplier.id }, order.supplier.name)}
               className="text-primary hover:underline font-medium"
             >
               {order.supplier.name}

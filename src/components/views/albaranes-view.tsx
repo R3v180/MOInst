@@ -286,7 +286,7 @@ export function AlbaranesView() {
                     <span className="text-muted-foreground">Pedido de compra: </span>
                     <button
                       onClick={() => {
-                        setView("purchase-order-detail", { id: detail.purchaseOrder.id });
+                        setView("purchase-order-detail", { id: detail.purchaseOrder.id }, detail.purchaseOrder.number);
                         setDetailId(null);
                       }}
                       className="text-primary hover:underline font-mono"
@@ -301,7 +301,7 @@ export function AlbaranesView() {
                     <span className="text-muted-foreground">Pedido de venta: </span>
                     <button
                       onClick={() => {
-                        setView("sale-order-detail", { id: detail.saleOrder.id });
+                        setView("sale-order-detail", { id: detail.saleOrder.id }, detail.saleOrder.number);
                         setDetailId(null);
                       }}
                       className="text-primary hover:underline font-mono"

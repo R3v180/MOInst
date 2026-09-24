@@ -260,7 +260,7 @@ export function InstallationDetailView() {
             <div className="flex-1 min-w-0 text-sm">
               Equipo instalado desde el pedido de venta{" "}
               <button
-                onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+                onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id }, inst.sourceSaleOrder.number)}
                 className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
               >
                 {inst.sourceSaleOrder.number}
@@ -276,7 +276,7 @@ export function InstallationDetailView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+              onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id }, inst.sourceSaleOrder.number)}
             >
               Ver pedido
             </Button>
@@ -298,7 +298,7 @@ export function InstallationDetailView() {
             <Info label="Cliente" icon={<span />} className="sm:col-span-2">
               {inst.client ? (
                 <button
-                  onClick={() => setView("client-detail", { id: inst.client.id })}
+                  onClick={() => setView("client-detail", { id: inst.client.id }, inst.client.name)}
                   className="text-primary hover:underline font-medium"
                 >
                   {inst.client.name}
@@ -343,7 +343,7 @@ export function InstallationDetailView() {
             <Info label="Pedido de venta origen" className="sm:col-span-2">
               {inst.sourceSaleOrder ? (
                 <button
-                  onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id })}
+                  onClick={() => setView("sale-order-detail", { id: inst.sourceSaleOrder.id }, inst.sourceSaleOrder.number)}
                   className="inline-flex items-center gap-1 text-primary hover:underline font-medium"
                 >
                   <ClipboardList className="w-3.5 h-3.5" />
@@ -495,7 +495,7 @@ export function InstallationDetailView() {
                 {inst.incidents.map((i: any) => (
                   <li key={i.id}>
                     <button
-                      onClick={() => setView("incident-detail", { id: i.id })}
+                      onClick={() => setView("incident-detail", { id: i.id }, i.number)}
                       className="w-full text-left p-4 hover:bg-accent transition-colors flex items-center gap-3"
                     >
                       <div className="shrink-0 w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
@@ -534,7 +534,7 @@ export function InstallationDetailView() {
               {inst.saleQuotes.map((q: any) => (
                 <li key={q.id}>
                   <button
-                    onClick={() => setView("sale-quote-detail", { id: q.id })}
+                    onClick={() => setView("sale-quote-detail", { id: q.id }, q.number)}
                     className="w-full text-left p-4 hover:bg-accent transition-colors flex items-center gap-3"
                   >
                     <FileText className="w-4 h-4 text-primary shrink-0" />

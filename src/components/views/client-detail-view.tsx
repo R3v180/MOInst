@@ -180,7 +180,7 @@ export function ClientDetailView() {
                 <ul className="divide-y divide-border">
                   {client.installations.map((i: any) => (
                     <li key={i.id}>
-                      <button onClick={() => setView("installation-detail", { id: i.id })} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
+                      <button onClick={() => setView("installation-detail", { id: i.id }, [i.brand, i.model].filter(Boolean).join(" ") || i.equipmentType)} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
                         <Wrench className="w-4 h-4 text-primary shrink-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium truncate">{[i.brand, i.model].filter(Boolean).join(" ") || i.equipmentType}</div>
@@ -206,7 +206,7 @@ export function ClientDetailView() {
                 <ul className="divide-y divide-border">
                   {client.saleQuotes.map((q: any) => (
                     <li key={q.id}>
-                      <button onClick={() => setView("sale-quote-detail", { id: q.id })} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
+                      <button onClick={() => setView("sale-quote-detail", { id: q.id }, q.number)} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
                         <FileText className="w-4 h-4 text-primary shrink-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium">{q.number}</div>
@@ -232,7 +232,7 @@ export function ClientDetailView() {
                 <ul className="divide-y divide-border">
                   {client.saleOrders.map((o: any) => (
                     <li key={o.id}>
-                      <button onClick={() => setView("sale-order-detail", { id: o.id })} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
+                      <button onClick={() => setView("sale-order-detail", { id: o.id }, o.number)} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
                         <ClipboardList className="w-4 h-4 text-primary shrink-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium">{o.number}</div>
@@ -258,7 +258,7 @@ export function ClientDetailView() {
                 <ul className="divide-y divide-border">
                   {client.incidents.map((i: any) => (
                     <li key={i.id}>
-                      <button onClick={() => setView("incident-detail", { id: i.id })} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
+                      <button onClick={() => setView("incident-detail", { id: i.id }, i.number)} className="w-full text-left py-3 hover:bg-accent px-2 -mx-2 rounded flex items-center gap-3">
                         <Siren className="w-4 h-4 text-destructive shrink-0" />
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium">{i.number}</div>

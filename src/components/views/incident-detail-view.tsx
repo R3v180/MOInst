@@ -506,7 +506,7 @@ function TraceabilityChain({
             label="Proveedores"
             chips={suppliers.map((s) => ({
               label: s.name,
-              onClick: () => setView("supplier-detail", { id: s.id }),
+              onClick: () => setView("supplier-detail", { id: s.id }, s.name),
             }))}
             hint={suppliers.length === 0 ? "Sin proveedores en la cadena" : undefined}
           />

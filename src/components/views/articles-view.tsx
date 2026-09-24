@@ -87,7 +87,7 @@ export function ArticlesView() {
       toast({ title: "Artículo creado" });
       qc.invalidateQueries({ queryKey: ["articles"] });
       setShowNew(false);
-      setView("article-detail", { id: article.id });
+      setView("article-detail", { id: article.id }, article.name);
     },
     onError: (e: any) =>
       toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -191,7 +191,7 @@ export function ArticlesView() {
             return (
               <button
                 key={a.id}
-                onClick={() => setView("article-detail", { id: a.id })}
+                onClick={() => setView("article-detail", { id: a.id }, a.name)}
                 className="text-left"
               >
                 <Card className="hover:shadow-md hover:border-primary/40 transition-all h-full">

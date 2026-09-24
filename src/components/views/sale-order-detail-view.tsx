@@ -211,7 +211,7 @@ export function SaleOrderDetailView() {
             {order.sourceSaleQuote ? (
               <button
                 className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
-                onClick={() => setView("sale-quote-detail", { id: order.sourceSaleQuote.id })}
+                onClick={() => setView("sale-quote-detail", { id: order.sourceSaleQuote.id }, order.sourceSaleQuote.number)}
               >
                 <FileText className="w-3.5 h-3.5" />
                 {order.sourceSaleQuote.number}
@@ -320,7 +320,7 @@ export function SaleOrderDetailView() {
                   {order.installations.map((i: any) => (
                     <li key={i.id}>
                       <button
-                        onClick={() => setView("installation-detail", { id: i.id })}
+                        onClick={() => setView("installation-detail", { id: i.id }, [i.brand, i.model].filter(Boolean).join(" ") || i.equipmentType)}
                         className="w-full text-left py-3 px-4 hover:bg-accent flex items-center gap-3"
                       >
                         <Wrench className="w-4 h-4 text-primary shrink-0" />
@@ -414,7 +414,7 @@ export function SaleOrderDetailView() {
                     {order.purchaseQuotes.map((q: any) => (
                       <li key={q.id}>
                         <button
-                          onClick={() => setView("purchase-quote-detail", { id: q.id })}
+                          onClick={() => setView("purchase-quote-detail", { id: q.id }, q.id.slice(-6))}
                           className="w-full text-left py-2 px-3 hover:bg-accent flex items-center gap-2"
                         >
                           <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -438,7 +438,7 @@ export function SaleOrderDetailView() {
                     {order.purchaseOrders.map((p: any) => (
                       <li key={p.id}>
                         <button
-                          onClick={() => setView("purchase-order-detail", { id: p.id })}
+                          onClick={() => setView("purchase-order-detail", { id: p.id }, p.number || p.id.slice(-6))}
                           className="w-full text-left py-2 px-3 hover:bg-accent flex items-center gap-2"
                         >
                           <Package className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -474,7 +474,7 @@ export function SaleOrderDetailView() {
                   {order.incidents.map((i: any) => (
                     <li key={i.id}>
                       <button
-                        onClick={() => setView("incident-detail", { id: i.id })}
+                        onClick={() => setView("incident-detail", { id: i.id }, i.number)}
                         className="w-full text-left py-2 px-4 hover:bg-accent flex items-center gap-2"
                       >
                         <Siren className="w-3.5 h-3.5 text-destructive shrink-0" />

@@ -292,7 +292,7 @@ export function PurchaseQuoteDetailView() {
         <CardContent className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <InfoBlock label="Proveedor">
             <button
-              onClick={() => setView("supplier-detail", { id: quote.supplier.id })}
+              onClick={() => setView("supplier-detail", { id: quote.supplier.id }, quote.supplier.name)}
               className="text-primary hover:underline font-medium"
             >
               {quote.supplier.name}
@@ -304,7 +304,7 @@ export function PurchaseQuoteDetailView() {
           <InfoBlock label="Pedido de venta vinculado" highlight>
             {quote.saleOrder ? (
               <button
-                onClick={() => setView("sale-order-detail", { id: quote.saleOrder.id })}
+                onClick={() => setView("sale-order-detail", { id: quote.saleOrder.id }, quote.saleOrder.number)}
                 className="inline-flex items-center gap-1.5 text-primary hover:underline font-medium"
               >
                 <ShoppingCart className="w-4 h-4" />
@@ -562,7 +562,7 @@ export function PurchaseQuoteDetailView() {
                     <TableCell>{formatDateTime(po.issueDate)}</TableCell>
                     <TableCell><StatusBadge kind="purchaseOrder" value={po.status} /></TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="outline" onClick={() => setView("purchase-order-detail", { id: po.id })}>
+                      <Button size="sm" variant="outline" onClick={() => setView("purchase-order-detail", { id: po.id }, po.number || po.id.slice(-6))}>
                         Ver pedido
                       </Button>
                     </TableCell>

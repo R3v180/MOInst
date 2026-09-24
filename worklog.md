@@ -841,3 +841,49 @@ Stage Summary:
   * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-REVIEW-9
+Agent: main (cron webDevReview)
+Task: QA + fix recently viewed (labels en todos los call sites + localStorage persistence)
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con 3 charts + quick actions ✓. Navegación 14 módulos ✓. 0 errores runtime. IA consulta lectura ✓. Estado ESTABLE.
+
+FIXES / MEJORAS:
+1. **Labels en TODOS los setView detail calls** (pendiente de CRON-REVIEW-8):
+   - Antes: solo clients-view y dashboard-view pasaban label → solo clients se trackeaban en recent.
+   - Ahora: actualizados 30+ call sites en 10 vistas con labels apropiados:
+     * sale-order-detail-view: client-detail (order.client?.name), sale-quote-detail (sourceSaleQuote.number), installation-detail (brand+model), purchase-quote-detail (q.id), purchase-order-detail (p.number), incident-detail (i.number).
+     * client-detail-view: installation-detail (brand+model), sale-quote-detail (q.number), sale-order-detail (o.number), incident-detail (i.number).
+     * installation-detail-view: sale-order-detail (sourceSaleOrder.number), client-detail (client.name), incident-detail (i.number), sale-quote-detail (q.number).
+     * sale-quote-detail-view: client-detail (client.name), installation-detail (brand+model), sale-order-detail (o.number).
+     * purchase-quote-detail-view: supplier-detail (supplier.name), sale-order-detail (saleOrder.number), purchase-order-detail (po.number).
+     * purchase-order-detail-view: supplier-detail (supplier.name).
+     * incident-detail-view: supplier-detail (s.name).
+     * suppliers-view: supplier-detail (s.name).
+     * articles-view: article-detail (a.name).
+     * albaranes-view: purchase-order-detail (purchaseOrder.number), sale-order-detail (saleOrder.number).
+   - Fix de sintaxis: `or` → `||` (error de sed en CRON-REVIEW-8 inicial).
+
+2. **localStorage persistence para recent** (`src/store/app-store.ts`):
+   - Antes: `recent: []` (in-memory, se perdía al recargar).
+   - Ahora: `recent: loadRecent()` inicializa desde localStorage key `moinst-recent`. `saveRecent(items)` persiste en cada setView.
+   - `loadRecent()` con guard `typeof window === "undefined"` (SSR-safe). `saveRecent()` con try/catch.
+   - **Verificado E2E**: navegué a cliente "Juan Garcia Perez" → chip visible (1 Juan chip). Recargué la página → **chip persists** (1 Juan chip after reload). localStorage contiene `moinst-recent` con el cliente guardado.
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con 3 charts ✓.
+- Navegación 14 módulos ✓, 0 errores runtime.
+- Recently viewed: 0 chips inicialmente → 1 chip tras navegar a client detail → 1 chip persists tras reload ✓. localStorage confirmado con datos del cliente.
+- Lint: 0 errores.
+
+Stage Summary:
+- Estado: ESTABLE. 2 fixes (labels en 30+ call sites, localStorage persistence). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * Los chips solo se ven en lg+ (hidden lg:flex). En móvil no hay acceso rápido a recientes.
+  * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
+  * Los labels de purchase-quote y purchase-order usan q.id.slice(-6) / p.number como fallback — si no hay número, el label es un ID corto (mejor que nada pero no ideal).
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.

@@ -51,7 +51,7 @@ export function SuppliersView() {
       toast({ title: "Proveedor creado" });
       qc.invalidateQueries({ queryKey: ["suppliers"] });
       setShowNew(false);
-      setView("supplier-detail", { id: supplier.id });
+      setView("supplier-detail", { id: supplier.id }, supplier.name);
     },
     onError: (e: any) =>
       toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -121,7 +121,7 @@ export function SuppliersView() {
           {items.map((s: any) => (
             <button
               key={s.id}
-              onClick={() => setView("supplier-detail", { id: s.id })}
+              onClick={() => setView("supplier-detail", { id: s.id }, s.name)}
               className="text-left"
             >
               <Card className="hover:shadow-md hover:border-primary/40 transition-all h-full">

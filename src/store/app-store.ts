@@ -52,12 +52,32 @@ interface AppState {
   setAiPanelOpen: (open: boolean) => void;
 }
 
+const RECENT_KEY = "moinst-recent";
+const MAX_RECENT = 8;
+
+function loadRecent(): RecentItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = localStorage.getItem(RECENT_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecent(items: RecentItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(items));
+  } catch {}
+}
+
 export const useAppStore = create<AppState>((set) => ({
   view: "dashboard",
   params: {},
   sidebarOpen: false,
   aiPanelOpen: false,
-  recent: [],
+  recent: loadRecent(),
   setView: (view, params = {}, label) =>
     set((state) => {
       // Track detail views in recent history (max 8, dedup by view+id)
@@ -67,7 +87,8 @@ export const useAppStore = create<AppState>((set) => ({
         recent = [
           { view, params, label, timestamp: Date.now() },
           ...state.recent.filter((r) => `${r.view}:${r.params.id ?? ""}` !== key),
-        ].slice(0, 8);
+        ].slice(0, MAX_RECENT);
+        saveRecent(recent);
       }
       return { view, params, sidebarOpen: false, recent };
     }),

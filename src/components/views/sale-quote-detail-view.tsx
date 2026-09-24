@@ -407,7 +407,7 @@ export function SaleQuoteDetailView() {
             <div className="text-xs text-muted-foreground">Cliente</div>
             <button
               className="text-sm font-medium text-primary hover:underline truncate text-left"
-              onClick={() => setView("client-detail", { id: quote.clientId })}
+              onClick={() => setView("client-detail", { id: quote.clientId }, quote.client?.name || "Cliente")}
             >
               {client?.name ?? "—"}
             </button>
@@ -419,7 +419,7 @@ export function SaleQuoteDetailView() {
             {quote.installation ? (
               <button
                 className="text-sm font-medium text-primary hover:underline text-left flex items-center gap-1"
-                onClick={() => setView("installation-detail", { id: quote.installation.id })}
+                onClick={() => setView("installation-detail", { id: quote.installation.id }, [quote.installation.brand, quote.installation.model].filter(Boolean).join(" ") || quote.installation.equipmentType)}
               >
                 <Wrench className="w-3.5 h-3.5" />
                 {[quote.installation.brand, quote.installation.model].filter(Boolean).join(" ") || quote.installation.equipmentType}
@@ -612,7 +612,7 @@ export function SaleQuoteDetailView() {
               {quote.saleOrders.map((o: any) => (
                 <li key={o.id}>
                   <button
-                    onClick={() => setView("sale-order-detail", { id: o.id })}
+                    onClick={() => setView("sale-order-detail", { id: o.id }, o.number)}
                     className="w-full text-left py-3 px-4 hover:bg-accent flex items-center gap-3"
                   >
                     <FileInput className="w-4 h-4 text-primary" />
