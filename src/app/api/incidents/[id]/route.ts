@@ -9,6 +9,7 @@ const UPLOAD_ROOT = "/home/z/my-project/upload";
 
 // Include común: SaleOrder con cadena de trazabilidad completa
 // (purchaseQuotes/purchaseOrders con proveedores y albaranes)
+// Los adjuntos son polimórficos (sin FK) y se consultan aparte.
 const saleOrderTraceInclude = {
   client: { select: { id: true, name: true } },
   purchaseQuotes: {
@@ -18,14 +19,7 @@ const saleOrderTraceInclude = {
   purchaseOrders: {
     include: {
       supplier: { select: { id: true, name: true } },
-      albaranes: {
-        orderBy: { date: "desc" },
-        include: {
-          attachments: {
-            where: { entityType: "ALBARAN" },
-          },
-        },
-      },
+      albaranes: { orderBy: { date: "desc" } },
     },
     orderBy: { issueDate: "desc" },
   },
@@ -56,12 +50,7 @@ export async function GET(
         },
       },
       saleOrder: { include: saleOrderTraceInclude },
-      attachments: {
-        where: { entityType: "INCIDENT" },
-        orderBy: { createdAt: "desc" },
-        include: { uploadedBy: { select: { id: true, name: true } } },
-      },
-      openedBy: { select: { id: true, name: true } },
+      createdBy: { select: { id: true, name: true } },
       closedBy: { select: { id: true, name: true } },
     },
   });
@@ -70,7 +59,38 @@ export async function GET(
     return NextResponse.json({ error: "No encontrada" }, { status: 404 });
   }
 
-  return NextResponse.json(incident);
+  // Adjuntos polimórficos: se consultan por entityType+entityId (sin FK)
+  const incidentAttachments = await db.attachment.findMany({
+    where: { entityType: "INCIDENT", entityId: id },
+    orderBy: { createdAt: "desc" },
+    include: { uploadedBy: { select: { id: true, name: true } } },
+  });
+  // Adjuntos de los albaranes de los pedidos de compra vinculados (trazabilidad)
+  const albaranIds: string[] = [];
+  for (const so of [incident.installation?.sourceSaleOrder, incident.saleOrder].filter(Boolean) as any[]) {
+    for (const po of so.purchaseOrders ?? []) {
+      for (const a of po.albaranes ?? []) albaranIds.push(a.id);
+    }
+  }
+  let albaranAttachments: any[] = [];
+  if (albaranIds.length) {
+    albaranAttachments = await db.attachment.findMany({
+      where: { entityType: "ALBARAN", entityId: { in: albaranIds } },
+      orderBy: { createdAt: "desc" },
+    });
+    // agrupar por entityId para incrustar en cada albarán
+    const byEntity: Record<string, any[]> = {};
+    for (const a of albaranAttachments) {
+      (byEntity[a.entityId] ||= []).push(a);
+    }
+    for (const so of [incident.installation?.sourceSaleOrder, incident.saleOrder].filter(Boolean) as any[]) {
+      for (const po of so.purchaseOrders ?? []) {
+        for (const a of po.albaranes ?? []) a.attachments = byEntity[a.id] ?? [];
+      }
+    }
+  }
+
+  return NextResponse.json({ ...incident, attachments: incidentAttachments });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

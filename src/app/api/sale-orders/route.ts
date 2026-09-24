@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   if (clientId) where.AND.push({ clientId });
   if (paymentStatus) where.AND.push({ paymentStatus: paymentStatus as any });
 
+  if (where.AND && where.AND.length === 0) delete where.AND;
   const [total, items] = await Promise.all([
     db.saleOrder.count({ where }),
     db.saleOrder.findMany({

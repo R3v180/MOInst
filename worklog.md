@@ -312,3 +312,79 @@ Stage Summary:
 - 7 módulos: Clientes, Instalaciones, Artículos+Proveedores (con histórico de precios y gráfico recharts), Presupuestos/Pedidos de venta (con líneas, generar pedido, vista previa PDF, email), Presupuestos/Pedidos de compra + Albaranes (mobile camera flow), Incidencias (con trazabilidad completa encadenada), Agenda (Hoy/Semana/Mes), Ajustes (usuarios, catálogos, plantillas, sistema).
 - Footer sticky, responsive (sidebar drawer en móvil), tema teal/ámbar, scrollbars custom.
 - Login demo: socio1@moinst.local / moinst123.
+
+---
+Task ID: REV-1
+Agent: full-stack-developer
+Task: Dashboard mini-gráfico ventas mensuales + widget stock bajo + badge sidebar + vista mantenimientos con filtros
+
+Work Log:
+- Leí worklog.md (315 líneas) + archivos de referencia: schema.prisma (Maintenance, Article, SaleOrder), dashboard/route.ts, dashboard-view.tsx, sidebar-nav.tsx, app-store.ts, app-shell.tsx, incidents-view.tsx (patrón de filtros), installations/[id]/maintenances/route.ts, installations/[id]/route.ts, format.ts, page-header.tsx, empty-state.tsx, article-detail-view.tsx (patrón recharts), globals.css (vars chart-1..5).
+- Feature A1 (/api/dashboard/route.ts): añadidos `monthlySales` y `lowStockArticles` a la respuesta. Se traen los SaleOrder con status in [INSTALLED, CLOSED] y issueDate >= now-5meses, se agrupan en JS por mes (índice 0..5 = mes actual -5..0) usando monthIdx(). Para stock bajo, Prisma no soporta comparar dos columnas en where, así que se traen los artículos con stockMin > 0 y se filtran en JS (a.stock <= a.stockMin), tomando los 10 con stock más bajo.
+- Feature A2 (dashboard-view.tsx): nuevo bloque entre los KPI y los cards existentes — lg:grid-cols-3 con: card "Ventas mensuales (6 meses)" (lg:col-span-2) con recharts BarChart (XAxis por month, YAxis con tickFormatter "k" para miles, Tooltip personalizado MonthlySalesTooltip que muestra mes + total con formatCurrency + count de pedidos; Cell con paleta var(--color-chart-1..5); altura 200px responsive); card "Stock bajo" con lista scroll (max-h-96 overflow-y-auto scroll-thin) de artículos, cada fila name + internalCode·category + stock en rojo / mín + "Reponer". Si vacío: "Sin avisos de stock". Limpieza de imports: eliminado AlertTriangle (sin uso), añadidos PackageX, Package, TrendingUp.
+- Feature B1 (/api/alerts/route.ts): nuevo GET que devuelve { lowStockCount, openIncidentsCount, pendingQuotesCount, expiringWarrantiesCount } usando 3 count() de Prisma + 1 findMany para stock bajo (filtrado en JS, mismo truco que en dashboard).
+- Feature B2 (sidebar-nav.tsx): añadido useQuery(['alerts']) con staleTime: 60_000 y refetchOnMount: false. Si lowStock > 0, se renderiza un span badge rojo (bg-destructive text-destructive-foreground, min-w-[18px] h-[18px]) después del label "Artículos" en el sidebar. Sutil, con title accesible.
+- Feature C1 (/api/maintenances/route.ts): nuevo GET con filtros installationId, clientId (vía installation.clientId), dateFrom/dateTo (sobre date), performedById. Paginación page/pageSize (default 25, máx 100). Cada item incluye installation (con client) y performedBy. Guard `if (where.AND.length === 0) delete where.AND` para evitar el Prisma error con AND: [] vacío.
+- Feature C2 (maintenances-view.tsx): vista completa con PageHeader, filtros (cliente Select cargado de /api/clients?pageSize=200, rango fechas dateFrom/dateTo, realizado por Select cargado de /api/users), botón "Limpiar filtros" cuando hay filtros activos, tabla (Table de shadcn) con columnas Fecha / Cliente / Instalación (brand+model o equipmentType con icon Wrench) / Próxima revisión / Notas / Realizado por. Click en fila → setView("installation-detail", { id: m.installationId }). Paginación Anterior/Siguiente si >1 página. EmptyState con mensaje contextual (filtros activos vs sin datos).
+- Feature C3: añadido "maintenances" al ViewKey union en app-store.ts. Añadido import { MaintenancesView } + case "maintenances" en app-shell.tsx. Añadido { key: "maintenances", label: "Mantenimientos", icon: WrenchIcon, group: "Operativa" } después de Incidencias en sidebar-nav.tsx (reusando `Wrench as WrenchIcon` ya que Wrench ya estaba cogido para Instalaciones).
+- Verificación dev server (comando exacto del enunciado): home=200, dashboard=401, alerts=401, maintenances=401. Sin errores de compilación en /tmp/moinst-dev.log.
+- `bun run lint`: 0 errores, 0 warnings en los 8 archivos tocados (5 modificados + 3 creados).
+
+Stage Summary:
+- Archivos modificados (5): src/app/api/dashboard/route.ts, src/components/views/dashboard-view.tsx, src/components/app/sidebar-nav.tsx, src/store/app-store.ts, src/components/app/app-shell.tsx.
+- Archivos creados (3): src/app/api/alerts/route.ts, src/app/api/maintenances/route.ts, src/components/views/maintenances-view.tsx. Registro en /agent-ctx/REV-1-full-stack-developer.md.
+- Decisiones clave:
+  * Prisma no permite comparar dos columnas en where (e.g. stock <= stockMin); se traen los candidatos con stockMin > 0 y se filtran en JS, tomando slice(0, 10) con orderBy stock asc para priorizar los más críticos.
+  * monthlySales se agrupa en JS a partir de un findMany de los SaleOrder de los últimos 6 meses (status in [INSTALLED, CLOSED]); el índice monthIdx() usa la diferencia de meses (año*12+mes) respecto al actual para localizar el slot correcto en el array [0..5].
+  * El badge de stock bajo en el sidebar es sutil: rojo destructive, 18px alto, número centrado, con title accesible. useQuery(['alerts']) con staleTime 60s + refetchOnMount false para no recargar en cada navegación interna.
+  * La vista de Mantenimientos reutiliza /api/users (ya existente del agente 2-f) y /api/clients (ya existente del foundation) para poblar los selects de filtros — no se crean endpoints redundantes.
+  * Click en una fila de mantenimiento navega a installation-detail (no existe maintenance-detail) — mantiene coherencia con el flujo de instalación que es donde se crean/editan mantenimientos.
+  * Guard `if (where.AND.length === 0) delete where.AND` en /api/maintenances para evitar el Prisma error con arrays vacíos (siguiendo el contexto del bug fix del Attachment polimórfico).
+- Verificación: dev server OK (200/401/401/401, sin errores compile). `bun run lint`: 0 errores en los 8 archivos tocados.
+
+---
+Task ID: CRON-REVIEW-1
+Agent: main (cron webDevReview)
+Task: QA con agent-browser + fixes de bugs críticos + features nuevas (IA ampliada, dashboard con gráfico, stock bajo, vista mantenimientos) + styling
+
+Work Log:
+- QA con agent-browser: login OK, navegación a los 12 módulos. Detectados bugs críticos en runtime.
+
+BUGS CRÍTICOS DETECTADOS Y CORREGIDOS:
+1. **`where: { AND: [] }` vacío en 11 rutas list** (albaranes, incidents, installations, purchase-orders, sale-quotes, articles, clients, suppliers, appointments, purchase-quotes, sale-orders): Prisma rechaza `AND: []`. Fix: `if (where.AND?.length === 0) delete where.AND;` antes de la query en cada una.
+2. **Campo `openedBy` inexistente en Incident**: el modelo tiene `createdBy` (relación "IncidentOpenedBy"), NO `openedBy`. Las rutas /api/incidents y /api/incidents/[id] usaban `openedBy: { select: ... }` → PrismaClientValidationError. Fix: renombrado a `createdBy` en route.ts, [id]/route.ts, e incident-detail-view.tsx.
+3. **`include: { attachments }` en 6 rutas detail** (incidents/[id], albaranes/[id], sale-orders/[id], installations/[id], purchase-orders/[id], purchase-quotes/[id]): el modelo Attachment es POLIMÓRFICO (entityType + entityId, SIN FK) — NO es una relación Prisma. Usar `include: { attachments: {...} }` lanza PrismaClientValidationError. Fix en cada ruta: quitar `attachments` del `include`, hacer un `db.attachment.findMany({ where: { entityType, entityId } })` separado, y mergear en la respuesta. Para albaranes anidados (dentro de purchaseOrders), se agrupan los adjuntos por entityId y se incrustan en cada albarán.
+4. **Campo `total` inexistente en SaleOrder** en /api/dashboard (query de monthlySales): SaleOrder no tiene `total` (se calcula desde líneas). Fix: `select: { issueDate: true, lines: { select: { subtotal: true, isLabor: true } } }` y sumar `s.lines.reduce((sum, l) => sum + l.subtotal, 0)`.
+5. **`users.map is not a function` en MaintenancesView**: /api/users devuelve `{ items: [...] }`, no un array. Fix: `const users = (usersData as any)?.items ?? (Array.isArray(usersData) ? usersData : [])`.
+
+FEATURES NUEVAS AÑADIDAS:
+- **Asistente IA ampliado** (src/lib/ai/tools.ts): +8 tipos de acción: `compose_email` (redacta email, NO escribe BD, devuelve {to,subject,body}), `update_sale_quote_lines` (reemplaza líneas + recalcula totales), `adjust_stock` (delta o absolute), `cancel_appointment`, `mark_sale_order_installed` (crea instalaciones), `create_purchase_quote`, `update_article`, `delete_attachment` (con borrado de disco). System prompt ampliado con documentación de cada tipo + ejemplos de json-query para consultas comunes (presupuestos pendientes, garantías a caducar, stock bajo, histórico de un artículo, etc.).
+- **Panel IA: render especial para compose_email** (ai-chat-panel.tsx): tras "Aplicar", muestra un textarea readOnly con el cuerpo del email + botón "Copiar" (clipboard). Estado `actionResults` para guardar resultados de acciones ejecutadas.
+- **Dashboard: mini-gráfico de ventas mensuales** (recharts BarChart, 6 meses, paleta chart-1..5, tooltip custom con mes+total EUR+count) + **widget de stock bajo** (lista de artículos con stock <= stockMin, top 10). API /api/dashboard ampliada con `monthlySales` y `lowStockArticles`.
+- **API /api/alerts** (GET): { lowStockCount, openIncidentsCount, pendingQuotesCount, expiringWarrantiesCount } para badges rápidos.
+- **Badge de stock bajo en sidebar** (sidebar-nav.tsx): useQuery(['alerts'], staleTime 60s), badge rojo destructivo junto a "Artículos" si lowStock > 0.
+- **Nueva vista Mantenimientos** (maintenances-view.tsx + /api/maintenances): filtros (cliente, rango fechas, técnico), tabla de mantenimientos con link a installation-detail. Wired en app-store.tsx (ViewKey), app-shell.tsx (case), sidebar-nav.tsx (item "Mantenimientos" en grupo Operativa).
+
+STYLING:
+- globals.css: animación `moinst-fade` (transición al cambiar de vista SPA), `moinst-card-hover` (translateY -1px + shadow), `moinst-section-gradient` (gradiente teal/ámbar para cabeceras), `moinst-nav-active` (barra lateral ámbar en item activo del sidebar), `moinst-shimmer` (skeletons), focus-ring mejorado.
+- app-shell.tsx: `<div key={view} className="moinst-view-fade">` envuelve cada vista para fade al navegar.
+- sidebar-nav.tsx: `moinst-nav-active` + `hover:translate-x-0.5` en items.
+- dashboard-view.tsx: KPI cards con `moinst-card-hover`, cabecera con `moinst-section-gradient`.
+
+Verificación E2E con agent-browser (todo en un solo comando bash):
+- Login ✓, dashboard con chart recharts SVG ✓ + stock card ✓.
+- Navegación los 12 módulos: todos cargan, 0 errores 500, 0 PrismaClientValidationError.
+- Mantenimientos: h1 "Mantenimientos" + filtros + empty state ✓.
+- IA consulta lectura "¿cuántos clientes hay?" → respuesta "Actualmente hay 1 cliente en el sistema" ✓ (bucle agéntico json-query ejecutado contra Neon).
+- IA acción compose_email: la IA emite el bloque json-action (verificado en run anterior: action card HTML con border-dashed + botón Aplicar renderizados). En run donde faltaba el email del cliente, la IA pidió aclaración (comportamiento correcto per system prompt regla 4).
+- Lint: 0 errores. 16 endpoints API todos responden correctamente (200/401).
+
+Stage Summary:
+- Estado: ESTABLE. Bugs críticos resueltos (5 categorías). 3 features nuevas (IA ampliada, dashboard con gráfico+stock, vista mantenimientos). Styling pulido.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El LLM a veces pide aclaración antes de proponer acciones (deseado, pero puede requerir prompt más directo en algunos casos).
+  * La navegación "Artículos"/"Proveedores" vía `agent-browser find text` a veces no hace click (qa técnica, no bug de app — con ref funciona).
+  * No hay tests automatizados (por instrucciones).
+  * Subida de archivos desde el chat IA (procesar PDF/Excel de listas de precios): el botón adjuntar del panel IA solo inserta texto indicando que se suba desde el módulo pertinente — queda pendiente implementar parseo real de adjuntos en el chat.
+  * Email real (SMTP): no implementado (es compose + copiar), por diseño.

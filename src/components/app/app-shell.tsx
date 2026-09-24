@@ -24,6 +24,7 @@ import { PurchaseOrderDetailView } from "@/components/views/purchase-order-detai
 import { AlbaranesView } from "@/components/views/albaranes-view";
 import { IncidentsView } from "@/components/views/incidents-view";
 import { IncidentDetailView } from "@/components/views/incident-detail-view";
+import { MaintenancesView } from "@/components/views/maintenances-view";
 import { AgendaView } from "@/components/views/agenda-view";
 import { SettingsView } from "@/components/views/settings-view";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
@@ -53,6 +54,7 @@ export function AppShell() {
       case "albaranes": return <AlbaranesView />;
       case "incidents": return <IncidentsView />;
       case "incident-detail": return <IncidentDetailView />;
+      case "maintenances": return <MaintenancesView />;
       case "agenda": return <AgendaView />;
       case "settings": return <SettingsView />;
       default: return <DashboardView />;
@@ -71,7 +73,9 @@ export function AppShell() {
         <TopBar />
         <main className="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto">
           <ErrorBoundary key={view}>
-            {renderView()}
+            <div key={view} className="moinst-view-fade">
+              {renderView()}
+            </div>
           </ErrorBoundary>
         </main>
         <footer className="mt-auto border-t border-border bg-background py-3 px-4 text-center text-xs text-muted-foreground">

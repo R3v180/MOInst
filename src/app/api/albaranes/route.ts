@@ -39,6 +39,8 @@ export async function GET(req: NextRequest) {
     }
     where.AND.push({ date: range });
   }
+  // Prisma rechaza AND vacío; si no hay filtros, usar objeto vacío
+  if (where.AND.length === 0) delete where.AND;
 
   const [total, items] = await Promise.all([
     db.albaran.count({ where }),
@@ -60,16 +62,21 @@ export async function GET(req: NextRequest) {
           },
         },
         uploadedBy: { select: { id: true, name: true } },
-        attachments: {
-          where: { entityType: "ALBARAN" },
-          orderBy: { createdAt: "asc" },
-        },
       },
       orderBy: { date: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
   ]);
+
+  // Conteo de adjuntos polimórficos (no hay FK, se consulta por entityType+entityId)
+  const attCounts = await db.attachment.groupBy({
+    by: ["entityId"],
+    where: { entityType: "ALBARAN", entityId: { in: items.map((a: any) => a.id) } },
+    _count: { _all: true },
+  });
+  const attMap = Object.fromEntries(attCounts.map((c) => [c.entityId, c._count._all]));
+  const itemsWithCounts = items.map((a: any) => ({ ...a, attachmentCount: attMap[a.id] ?? 0 }));
 
   let meta:
     | { purchaseOrders: any[]; saleOrders: any[] }
@@ -98,7 +105,7 @@ export async function GET(req: NextRequest) {
     meta = { purchaseOrders, saleOrders };
   }
 
-  return NextResponse.json({ items, total, page, pageSize, meta });
+  return NextResponse.json({ items: itemsWithCounts, total, page, pageSize, meta });
 }
 
 export async function POST(req: NextRequest) {
@@ -191,12 +198,12 @@ export async function POST(req: NextRequest) {
         },
       },
       uploadedBy: { select: { id: true, name: true } },
-      attachments: {
-        where: { entityType: "ALBARAN" },
-        orderBy: { createdAt: "asc" },
-      },
     },
   });
-
-  return NextResponse.json(albaran, { status: 201 });
+  // Adjuntos polimórficos (sin FK)
+  const createdAttachments = await db.attachment.findMany({
+    where: { entityType: "ALBARAN", entityId: albaran.id },
+    orderBy: { createdAt: "asc" },
+  });
+  return NextResponse.json({ ...albaran, attachments: createdAttachments }, { status: 201 });
 }

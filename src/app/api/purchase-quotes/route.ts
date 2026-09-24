@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  if (where.AND && where.AND.length === 0) delete where.AND;
   const [total, items] = await Promise.all([
     db.purchaseQuote.count({ where }),
     db.purchaseQuote.findMany({
@@ -156,9 +157,13 @@ export async function POST(req: NextRequest) {
       saleOrder: { include: { client: { select: { id: true, name: true } } } },
       lines: { include: { article: true }, orderBy: { sortOrder: "asc" } },
       createdBy: { select: { name: true } },
-      attachments: { orderBy: { createdAt: "asc" } },
     },
   });
 
-  return NextResponse.json(quote, { status: 201 });
+  // Adjuntos polimórficos (sin FK)
+  const createdAttachments = await db.attachment.findMany({
+    where: { entityType: "PURCHASE_QUOTE", entityId: quote.id },
+    orderBy: { createdAt: "asc" },
+  });
+  return NextResponse.json({ ...quote, attachments: createdAttachments }, { status: 201 });
 }

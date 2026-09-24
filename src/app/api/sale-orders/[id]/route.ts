@@ -44,7 +44,6 @@ export async function GET(
       },
       deliveryAlbaranes: {
         include: {
-          attachments: true,
           uploadedBy: { select: { name: true } },
         },
         orderBy: { date: "desc" },
@@ -56,12 +55,26 @@ export async function GET(
         take: 10,
       },
       createdBy: { select: { id: true, name: true } },
-      attachments: true,
     },
   });
   if (!order) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  return NextResponse.json(order);
+  // Adjuntos polimórficos (sin FK): del pedido y de sus albaranes de entrega
+  const albaranIds = order.deliveryAlbaranes.map((a: any) => a.id);
+  const [orderAttachments, albaranAttachments] = await Promise.all([
+    db.attachment.findMany({ where: { entityType: "SALE_ORDER", entityId: id }, orderBy: { createdAt: "desc" } }),
+    albaranIds.length
+      ? db.attachment.findMany({ where: { entityType: "ALBARAN", entityId: { in: albaranIds } }, orderBy: { createdAt: "desc" } })
+      : Promise.resolve([]),
+  ]);
+  const albaranAttMap: Record<string, any[]> = {};
+  for (const a of albaranAttachments) (albaranAttMap[a.entityId] ||= []).push(a);
+  order.deliveryAlbaranes = order.deliveryAlbaranes.map((a: any) => ({
+    ...a,
+    attachments: albaranAttMap[a.id] ?? [],
+  }));
+
+  return NextResponse.json({ ...order, attachments: orderAttachments });
 }
 
 export async function PUT(

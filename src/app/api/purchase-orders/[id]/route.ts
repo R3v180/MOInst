@@ -29,24 +29,27 @@ export async function GET(
       lines: { include: { article: true }, orderBy: { sortOrder: "asc" } },
       albaranes: {
         orderBy: { date: "desc" },
-        include: {
-          uploadedBy: { select: { id: true, name: true } },
-          attachments: {
-            where: { entityType: "ALBARAN" },
-            orderBy: { createdAt: "asc" },
-          },
-        },
+        include: { uploadedBy: { select: { id: true, name: true } } },
       },
       createdBy: { select: { id: true, name: true } },
-      attachments: {
-        where: { entityType: "PURCHASE_ORDER" },
-        orderBy: { createdAt: "asc" },
-      },
     },
   });
   if (!order)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json(order);
+
+  // Adjuntos polimórficos: del pedido y de sus albaranes
+  const albaranIds = order.albaranes.map((a: any) => a.id);
+  const [poAttachments, albaranAttachments] = await Promise.all([
+    db.attachment.findMany({ where: { entityType: "PURCHASE_ORDER", entityId: id }, orderBy: { createdAt: "asc" } }),
+    albaranIds.length
+      ? db.attachment.findMany({ where: { entityType: "ALBARAN", entityId: { in: albaranIds } }, orderBy: { createdAt: "asc" } })
+      : Promise.resolve([]),
+  ]);
+  const albaranAttMap: Record<string, any[]> = {};
+  for (const a of albaranAttachments) (albaranAttMap[a.entityId] ||= []).push(a);
+  order.albaranes = order.albaranes.map((a: any) => ({ ...a, attachments: albaranAttMap[a.id] ?? [] }));
+
+  return NextResponse.json({ ...order, attachments: poAttachments });
 }
 
 export async function PUT(
@@ -84,10 +87,6 @@ export async function PUT(
         orderBy: { date: "desc" },
         include: {
           uploadedBy: { select: { id: true, name: true } },
-          attachments: {
-            where: { entityType: "ALBARAN" },
-            orderBy: { createdAt: "asc" },
-          },
         },
       },
       createdBy: { select: { id: true, name: true } },

@@ -103,10 +103,34 @@ REGLAS DE COMPORTAMIENTO:
 { "type": "create_client", "label": "Crear cliente 'Juan García'", "payload": { "name": "Juan García", "phonePrimary": "...", ... } }
 \`\`\`
    NUNCA ejecutas la acción directamente: la propones y el usuario debe confirmar explícitamente. Tras confirmar, el sistema la ejecuta.
-   Tipos de acción soportados: create_client, update_client, create_supplier, update_supplier, create_article, set_article_price, create_appointment, close_incident, update_incident, create_installation, create_maintenance, set_sale_quote_status, generate_sale_order_from_quote.
+   Tipos de acción soportados:
+   - create_client, update_client, delete_client (lógicamente): alta/edición de clientes
+   - create_supplier, update_supplier: proveedores
+   - create_article, update_article: artículos del catálogo
+   - set_article_price: { articleId, supplierId, price, supplierRef?, deliveryDays?, notes? } — AÑADE una fila al histórico (nunca sobrescribe)
+   - adjust_stock: { id, delta } o { id, absolute } — ajusta el stock de un artículo
+   - create_appointment: { type, startAt (ISO), durationMin?, clientId?, installationId?, saleOrderId?, address?, notes?, assignedToId? }
+   - cancel_appointment: { id }
+   - create_installation: { clientId, equipmentType, brand?, model?, serialNumber?, location?, installDate?, warrantyEndDate?, notes? }
+   - create_maintenance: { installationId, date, nextReviewDate?, notes? }
+   - close_incident: { id, resolution }
+   - update_incident: { id, description?, resolution?, status? }
+   - set_sale_quote_status: { id, status (DRAFT/SENT/ACCEPTED/REJECTED/EXPIRED) }
+   - update_sale_quote_lines: { id, lines: [{ articleId?, description, quantity, unitPrice, discount?, isLabor? }] } — reemplaza TODAS las líneas y recalcula totales
+   - mark_sale_order_installed: { id, installations?: [{ clientId, equipmentType, brand?, model?, serialNumber? }] }
+   - create_purchase_quote: { supplierId, saleOrderId?, lines: [{ articleId?, description, quantity, unitPrice }], notes? }
+   - compose_email: { to?, subject?, body } — NO escribe en BD; redacta el email para que el usuario lo copie/envíe (avisos de garantía, reenvío de presupuestos, confirmación de cita)
+   - delete_attachment: { id }
 4. Si el usuario pide algo ambiguo, pide aclaración antes de proponer.
-5. Para emails (avisos, reenvío de presupuestos), redacta el texto y propón la acción "compose_email" con el cuerpo; el usuario podrá copiarlo o enviarlo.
-6. Sé proactivo: si detectas que algo se puede mejorar (ej. un presupuesto sin respuesta hace 10 días), menciónalo.`;
+5. Para emails (avisos de garantía, reenvío de presupuestos, confirmación de cita), redacta el texto en español profesional y propón la acción "compose_email" con { to, subject, body }. El usuario podrá copiarlo.
+6. Sé proactivo: si detectas algo mejorable (presupuesto sin respuesta >7 días, garantía a caducar <30 días, stock bajo), menciónalo y propón la acción pertinente.
+7. Ejemplos de consultas útiles con json-query:
+   - Presupuestos pendientes de respuesta: {"model":"saleQuote","where":{"status":"SENT"},"include":{"client":true},"orderBy":{"issueDate":"desc"}}
+   - Garantías a caducar en 30 días: {"model":"installation","where":{"status":"ACTIVE","warrantyEndDate":{"gte":"<now-iso>","lte":"<now+30d-iso>"}},"include":{"client":true}}
+   - Stock bajo: {"model":"article","where":{"stockMin":{"gt":0},"stock":{"lte":0}}}
+   - Incidencias abiertas de un cliente: {"model":"incident","where":{"clientId":"<id>","status":{"in":["OPEN","IN_RESOLUTION"]}}}
+   - Mejor precio de un artículo: {"model":"articleSupplier","where":{"articleId":"<id>"},"orderBy":{"priceDate":"desc"},"take":20,"include":{"supplier":true}}
+   - Histórico de un cliente: haz varias queries en un solo turno (cliente, sus installations, saleQuotes, incidents, appointments).`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ejecución de acciones (tras confirmación del usuario)
@@ -198,6 +222,119 @@ export async function executeAction(
       if (!id || !status) return { ok: false, summary: "Faltan id/status" };
       const q = await db.saleQuote.update({ where: { id }, data: { status } });
       return { ok: true, summary: `Presupuesto ${q.number} → ${status}`, result: q };
+    }
+    case "compose_email": {
+      // No escribe en BD: devuelve el email redactado para que el usuario lo copie/envíe.
+      const { to, subject, body } = payload as any;
+      if (!body) return { ok: false, summary: "Falta el cuerpo del email" };
+      return {
+        ok: true,
+        summary: `Email redactado${to ? ` para ${to}` : ""}${subject ? ` · Asunto: ${subject}` : ""}`,
+        result: { to, subject, body },
+      };
+    }
+    case "update_sale_quote_lines": {
+      // Reemplaza las líneas de un presupuesto y recalcula subtotales/total.
+      const { id, lines } = payload as any;
+      if (!id || !Array.isArray(lines)) return { ok: false, summary: "Faltan id o lines" };
+      const computed = lines.map((l: any, i: number) => {
+        const qty = Number(l.quantity ?? 1);
+        const price = Number(l.unitPrice ?? 0);
+        const disc = Number(l.discount ?? 0);
+        const subtotal = Math.round(qty * price * (1 - disc / 100) * 100) / 100;
+        return {
+          articleId: l.articleId ?? null,
+          description: l.description ?? "",
+          quantity: qty,
+          unitPrice: price,
+          discount: disc,
+          subtotal,
+          isLabor: !!l.isLabor,
+          sortOrder: i,
+        };
+      });
+      const laborTotal = computed.filter((l: any) => l.isLabor).reduce((s: number, l: any) => s + l.subtotal, 0);
+      const total = computed.reduce((s: number, l: any) => s + l.subtotal, 0);
+      await db.saleQuoteLine.deleteMany({ where: { saleQuoteId: id } });
+      await db.saleQuoteLine.createMany({
+        data: computed.map((l: any) => ({ ...l, saleQuoteId: id })),
+      });
+      const q = await db.saleQuote.update({ where: { id }, data: { laborTotal, total } });
+      return { ok: true, summary: `Presupuesto ${q.number} actualizado: ${computed.length} líneas, total ${total}€`, result: q };
+    }
+    case "adjust_stock": {
+      const { id, delta, absolute } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id de artículo" };
+      const art = await db.article.findUnique({ where: { id } });
+      if (!art) return { ok: false, summary: "Artículo no encontrado" };
+      const newStock = absolute != null ? Number(absolute) : art.stock + Number(delta ?? 0);
+      const a = await db.article.update({ where: { id }, data: { stock: newStock } });
+      return { ok: true, summary: `Stock de ${a.name}: ${art.stock} → ${newStock} ${a.unit}`, result: a };
+    }
+    case "cancel_appointment": {
+      const { id } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id de cita" };
+      const a = await db.appointment.update({ where: { id }, data: { status: "CANCELLED" } });
+      return { ok: true, summary: `Cita de ${new Date(a.startAt).toLocaleString("es-ES")} cancelada`, result: a };
+    }
+    case "mark_sale_order_installed": {
+      const { id, installations } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id de pedido" };
+      if (Array.isArray(installations) && installations.length) {
+        for (const inst of installations) {
+          await db.installation.create({
+            data: { ...inst, sourceSaleOrderId: id, createdById: userId },
+          });
+        }
+      }
+      const o = await db.saleOrder.update({ where: { id }, data: { status: "INSTALLED" } });
+      return { ok: true, summary: `Pedido ${o.number} marcado como INSTALADO`, result: o };
+    }
+    case "create_purchase_quote": {
+      const { supplierId, saleOrderId, lines, notes } = payload as any;
+      if (!supplierId || !Array.isArray(lines)) return { ok: false, summary: "Faltan supplierId o lines" };
+      const computed = lines.map((l: any, i: number) => ({
+        articleId: l.articleId ?? null,
+        description: l.description ?? "",
+        quantity: Number(l.quantity ?? 1),
+        unitPrice: Number(l.unitPrice ?? 0),
+        subtotal: Math.round(Number(l.quantity ?? 1) * Number(l.unitPrice ?? 0) * 100) / 100,
+        sortOrder: i,
+      }));
+      const total = computed.reduce((s: number, l: any) => s + l.subtotal, 0);
+      const pq = await db.purchaseQuote.create({
+        data: {
+          supplierId,
+          saleOrderId: saleOrderId ?? null,
+          total,
+          notes: notes ?? null,
+          status: "RECEIVED",
+          createdById: userId,
+          lines: { create: computed },
+        },
+      });
+      return { ok: true, summary: `Presupuesto de compra creado (id ${pq.id}), total ${total}€`, result: pq };
+    }
+    case "update_article": {
+      const { id, ...data } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id de artículo" };
+      const a = await db.article.update({ where: { id }, data });
+      return { ok: true, summary: `Artículo actualizado: ${a.name}`, result: a };
+    }
+    case "delete_attachment": {
+      const { id } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id de adjunto" };
+      const att = await db.attachment.findUnique({ where: { id } });
+      if (!att) return { ok: false, summary: "Adjunto no encontrado" };
+      try {
+        const parts = att.filePath.split("/api/uploads/")[1];
+        if (parts) {
+          const path = await import("path");
+          await (await import("fs")).promises.unlink(path.join("/home/z/my-project/upload", parts));
+        }
+      } catch {}
+      await db.attachment.delete({ where: { id } });
+      return { ok: true, summary: `Adjunto ${att.fileName} eliminado` };
     }
     default:
       return { ok: false, summary: `Tipo de acción no soportado: ${type}` };

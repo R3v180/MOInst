@@ -2,6 +2,7 @@
 
 import { useAppStore, type ViewKey } from "@/store/app-store";
 import { useSession } from "next-auth/react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -18,6 +19,7 @@ import {
   Snowflake,
   Thermometer,
   Sparkles,
+  Wrench as WrenchIcon,
   X,
 } from "lucide-react";
 
@@ -38,6 +40,7 @@ const NAV: NavItem[] = [
 
   { key: "installations", label: "Instalaciones", icon: Wrench, group: "Operativa" },
   { key: "incidents", label: "Incidencias / garantías", icon: Siren, group: "Operativa" },
+  { key: "maintenances", label: "Mantenimientos", icon: WrenchIcon, group: "Operativa" },
   { key: "albaranes", label: "Albaranes", icon: Truck, group: "Operativa" },
 
   { key: "suppliers", label: "Proveedores", icon: Truck, group: "Compras" },
@@ -51,6 +54,15 @@ const NAV: NavItem[] = [
 export function SidebarNav() {
   const { view, setView, setSidebarOpen } = useAppStore();
   const { data: session } = useSession();
+
+  // Contadores para badges en la navegación (cache 60s).
+  const { data: alerts } = useQuery({
+    queryKey: ["alerts"],
+    queryFn: () => fetch("/api/alerts").then((r) => (r.ok ? r.json() : null)),
+    staleTime: 60_000,
+    refetchOnMount: false,
+  });
+  const lowStock = alerts?.lowStockCount ?? 0;
 
   const groups = Array.from(new Set(NAV.map((n) => n.group)));
 
@@ -92,19 +104,28 @@ export function SidebarNav() {
                 const active =
                   view === item.key || view.startsWith(item.key);
                 const Icon = item.icon;
+                const showLowStockBadge = item.key === "articles" && lowStock > 0;
                 return (
                   <button
                     key={item.key}
                     onClick={() => setView(item.key)}
                     className={cn(
-                      "w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors text-left",
+                      "w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all text-left",
                       active
-                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm moinst-nav-active"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5"
                     )}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
+                    <span className="truncate flex-1">{item.label}</span>
+                    {showLowStockBadge && (
+                      <span
+                        className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-semibold rounded-full bg-destructive text-destructive-foreground"
+                        title={`${lowStock} artículo(s) con stock bajo el mínimo`}
+                      >
+                        {lowStock}
+                      </span>
+                    )}
                   </button>
                 );
               })}

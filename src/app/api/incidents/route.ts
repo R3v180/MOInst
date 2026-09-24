@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
   }
   if (status) where.AND.push({ status });
   if (clientId) where.AND.push({ clientId });
+  // Prisma rechaza AND vacío; si no hay filtros, usar objeto vacío
+  if (where.AND.length === 0) delete where.AND;
 
   const [total, items] = await Promise.all([
     db.incident.count({ where }),
@@ -49,9 +51,8 @@ export async function GET(req: NextRequest) {
           },
         },
         saleOrder: { select: { id: true, number: true } },
-        openedBy: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true } },
         closedBy: { select: { id: true, name: true } },
-        _count: { select: { attachments: { where: { entityType: "INCIDENT" } } } },
       },
       orderBy: { openedAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -59,8 +60,17 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  // Conteo de adjuntos polimórficos (no hay FK, se consulta por entityType+entityId)
+  const counts = await db.attachment.groupBy({
+    by: ["entityId"],
+    where: { entityType: "INCIDENT", entityId: { in: items.map((i: any) => i.id) } },
+    _count: { _all: true },
+  });
+  const countMap = Object.fromEntries(counts.map((c) => [c.entityId, c._count._all]));
+  const itemsWithCounts = items.map((i: any) => ({ ...i, attachmentCount: countMap[i.id] ?? 0 }));
+
   return NextResponse.json({
-    items,
+    items: itemsWithCounts,
     total,
     page,
     pageSize,

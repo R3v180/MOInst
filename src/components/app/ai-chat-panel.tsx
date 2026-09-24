@@ -5,7 +5,7 @@ import { useAppStore } from "@/store/app-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Sparkles, X, Send, Bot, User, Check, AlertTriangle, Paperclip, FileText } from "lucide-react";
+import { Loader2, Sparkles, X, Send, Bot, User, Check, AlertTriangle, Paperclip, FileText, Copy } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -34,6 +34,7 @@ export function AiChatPanel() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingActions, setPendingActions] = useState<Record<string, "pending" | "done" | "error">>({});
+  const [actionResults, setActionResults] = useState<Record<string, any>>({});
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const qc = useQueryClient();
@@ -96,6 +97,7 @@ export function AiChatPanel() {
         return;
       }
       setPendingActions((p) => ({ ...p, [key]: "done" }));
+      setActionResults((p) => ({ ...p, [key]: data.result }));
       toast({ title: "Acción ejecutada", description: data.summary });
       // Invalida queries para refrescar UI
       qc.invalidateQueries();
@@ -188,6 +190,34 @@ export function AiChatPanel() {
                                 <div className="flex gap-2">
                                   <Button size="sm" className="h-7 text-xs" onClick={() => runAction(a, i)}>
                                     <Check className="w-3 h-3 mr-1" /> Aplicar
+                                  </Button>
+                                </div>
+                              )}
+                              {/* Render especial para emails redactados */}
+                              {state === "done" && a.type === "compose_email" && actionResults[key] && (
+                                <div className="mt-2 rounded border border-border bg-background p-2">
+                                  {actionResults[key].to && (
+                                    <div className="text-[10px] text-muted-foreground">Para: <span className="font-medium text-foreground">{actionResults[key].to}</span></div>
+                                  )}
+                                  {actionResults[key].subject && (
+                                    <div className="text-[10px] text-muted-foreground">Asunto: <span className="font-medium text-foreground">{actionResults[key].subject}</span></div>
+                                  )}
+                                  <textarea
+                                    readOnly
+                                    className="mt-1 w-full text-xs bg-muted/50 rounded p-2 border border-border resize-y min-h-[80px] scroll-thin"
+                                    value={actionResults[key].body ?? ""}
+                                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs mt-1"
+                                    onClick={() => {
+                                      navigator.clipboard?.writeText(actionResults[key].body ?? "");
+                                      toast({ title: "Email copiado", description: "Pégalo en tu cliente de correo" });
+                                    }}
+                                  >
+                                    <Copy className="w-3 h-3 mr-1" /> Copiar
                                   </Button>
                                 </div>
                               )}

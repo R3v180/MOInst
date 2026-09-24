@@ -21,6 +21,7 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const { id } = await params;
 
+  // El esquema usa Attachment polimórfico (sin FK): se consulta aparte.
   const installation = await db.installation.findUnique({
     where: { id },
     include: {
@@ -35,30 +36,17 @@ export async function GET(
           client: { select: { id: true, name: true } },
         },
       },
-      attachments: {
-        orderBy: { createdAt: "desc" },
-      },
       incidents: {
         orderBy: { openedAt: "desc" },
-        include: {
-          client: { select: { id: true, name: true } },
-        },
+        include: { client: { select: { id: true, name: true } } },
       },
       maintenances: {
         orderBy: { date: "desc" },
-        include: {
-          performedBy: { select: { id: true, name: true } },
-        },
+        include: { performedBy: { select: { id: true, name: true } } },
       },
       saleQuotes: {
         orderBy: { issueDate: "desc" },
-        select: {
-          id: true,
-          number: true,
-          status: true,
-          total: true,
-          issueDate: true,
-        },
+        select: { id: true, number: true, status: true, total: true, issueDate: true },
       },
       createdBy: { select: { id: true, name: true } },
     },
@@ -67,7 +55,12 @@ export async function GET(
   if (!installation) {
     return NextResponse.json({ error: "No encontrada" }, { status: 404 });
   }
-  return NextResponse.json(installation);
+  const attachments = await db.attachment.findMany({
+    where: { entityType: "INSTALLATION", entityId: id },
+    orderBy: { createdAt: "desc" },
+    include: { uploadedBy: { select: { id: true, name: true } } },
+  });
+  return NextResponse.json({ ...installation, attachments });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

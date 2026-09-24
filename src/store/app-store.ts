@@ -23,6 +23,7 @@ export type ViewKey =
   | "albaranes"
   | "incidents"
   | "incident-detail"
+  | "maintenances"
   | "agenda"
   | "settings"
   | "ai-chat";

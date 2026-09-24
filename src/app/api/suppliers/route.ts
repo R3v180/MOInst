@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  if (where.AND && where.AND.length === 0) delete where.AND;
   const [total, items] = await Promise.all([
     db.supplier.count({ where }),
     db.supplier.findMany({

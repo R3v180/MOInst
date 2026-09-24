@@ -8,9 +8,33 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDateTime, formatDate, daysUntil, fullAddress } from "@/lib/format";
 import {
   CalendarDays, Users, Wrench, Siren, FileText, ClipboardList, ShieldAlert, Sparkles,
-  TrendingUp, MapPin, Clock, AlertTriangle, Wrench as WrenchIcon,
+  TrendingUp, MapPin, Clock, PackageX, Package,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
+
+const BAR_COLORS = [
+  "var(--color-chart-1)",
+  "var(--color-chart-2)",
+  "var(--color-chart-3)",
+  "var(--color-chart-4)",
+  "var(--color-chart-5)",
+  "var(--color-chart-1)",
+];
+
+function MonthlySalesTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs shadow-md">
+      <div className="font-semibold capitalize">{p.month}</div>
+      <div className="text-muted-foreground">Total: {formatCurrency(p.total)}</div>
+      <div className="text-muted-foreground">Pedidos: {p.count}</div>
+    </div>
+  );
+}
 
 export function DashboardView() {
   const { setView } = useAppStore();
@@ -44,7 +68,7 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 moinst-section-gradient -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 rounded-lg">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Panel</h1>
           <p className="text-sm text-muted-foreground">
@@ -67,7 +91,7 @@ export function DashboardView() {
               onClick={() => setView(card.view)}
               className="text-left"
             >
-              <Card className="hover:shadow-md transition-shadow h-full">
+              <Card className="hover:shadow-md transition-shadow h-full moinst-card-hover">
                 <CardContent className="p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <Icon className={`w-5 h-5 ${card.color}`} />
@@ -81,6 +105,101 @@ export function DashboardView() {
             </button>
           );
         })}
+      </div>
+
+      {/* Mini-chart de ventas mensuales + Stock bajo */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3 flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" /> Ventas mensuales (6 meses)
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setView("sale-orders")}>
+              Ver pedidos
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={data.monthlySales ?? []}
+                  margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    className="capitalize"
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) =>
+                      v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`
+                    }
+                    width={36}
+                  />
+                  <Tooltip
+                    content={<MonthlySalesTooltip />}
+                    cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                  />
+                  <Bar dataKey="total" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                    {(data.monthlySales ?? []).map((_: any, i: number) => (
+                      <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3 flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PackageX className="w-4 h-4 text-destructive" /> Stock bajo
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setView("articles")}>
+              Ver
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {(data.lowStockArticles ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                Sin avisos de stock
+              </p>
+            ) : (
+              <div className="space-y-1 max-h-[200px] overflow-y-auto scroll-thin -mx-1">
+                {(data.lowStockArticles ?? []).map((a: any) => (
+                  <button
+                    key={a.id}
+                    onClick={() => setView("article-detail", { id: a.id })}
+                    className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-accent border border-transparent hover:border-border"
+                  >
+                    <Package className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{a.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {a.internalCode} · {a.category}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-semibold text-destructive">
+                        {a.stock} {a.unit}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        mín {a.stockMin} · Reponer
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -175,7 +175,7 @@ export function IncidentDetailView() {
                 <div>
                   <Label className="text-xs text-muted-foreground">Apertura</Label>
                   <div>{formatDateTime(inc.openedAt)}</div>
-                  <div className="text-xs text-muted-foreground">por {inc.openedBy?.name ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">por {inc.createdBy?.name ?? "—"}</div>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Cierre</Label>

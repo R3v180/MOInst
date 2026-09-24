@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
     where.AND.push({ incidents: { some: { status: { in: ["OPEN", "IN_RESOLUTION"] } } } });
   }
 
+  if (where.AND && where.AND.length === 0) delete where.AND;
   const [total, items] = await Promise.all([
     db.client.count({ where }),
     db.client.findMany({

@@ -42,10 +42,6 @@ export async function GET(
       },
       lines: { include: { article: true }, orderBy: { sortOrder: "asc" } },
       createdBy: { select: { id: true, name: true } },
-      attachments: {
-        where: { entityType: "PURCHASE_QUOTE" },
-        orderBy: { createdAt: "asc" },
-      },
       purchaseOrders: {
         select: { id: true, number: true, status: true, issueDate: true },
         orderBy: { issueDate: "desc" },
@@ -54,7 +50,12 @@ export async function GET(
   });
   if (!quote)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json(quote);
+  // Adjuntos polimórficos (sin FK)
+  const attachments = await db.attachment.findMany({
+    where: { entityType: "PURCHASE_QUOTE", entityId: id },
+    orderBy: { createdAt: "asc" },
+  });
+  return NextResponse.json({ ...quote, attachments });
 }
 
 export async function PUT(
@@ -135,10 +136,6 @@ export async function PUT(
       },
       lines: { include: { article: true }, orderBy: { sortOrder: "asc" } },
       createdBy: { select: { id: true, name: true } },
-      attachments: {
-        where: { entityType: "PURCHASE_QUOTE" },
-        orderBy: { createdAt: "asc" },
-      },
       purchaseOrders: {
         select: { id: true, number: true, status: true, issueDate: true },
         orderBy: { issueDate: "desc" },

@@ -28,15 +28,18 @@ export async function GET(
         },
       },
       uploadedBy: { select: { id: true, name: true } },
-      attachments: {
-        where: { entityType: "ALBARAN" },
-        orderBy: { createdAt: "asc" },
-      },
     },
   });
   if (!albaran)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
-  return NextResponse.json(albaran);
+
+  // Adjuntos polimórficos (sin FK): consulta por entityType+entityId
+  const attachments = await db.attachment.findMany({
+    where: { entityType: "ALBARAN", entityId: id },
+    orderBy: { createdAt: "asc" },
+    include: { uploadedBy: { select: { id: true, name: true } } },
+  });
+  return NextResponse.json({ ...albaran, attachments });
 }
 
 export async function DELETE(

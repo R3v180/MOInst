@@ -153,3 +153,76 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* Transición de fade al cambiar de vista (navegación SPA por estado) */
+@keyframes moinst-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.moinst-view-fade {
+  animation: moinst-fade 0.25s ease-out;
+}
+
+/* Mejoras de hover para tarjetas clicables */
+.moinst-card-hover {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+.moinst-card-hover:hover {
+  transform: translateY(-1px);
+}
+
+/* Gradiente sutil para cabeceras de sección */
+.moinst-section-gradient {
+  background: linear-gradient(135deg, oklch(0.45 0.09 195 / 0.06), oklch(0.7 0.13 75 / 0.05));
+}
+
+/* Estado activo del sidebar con barra lateral */
+.moinst-nav-active {
+  position: relative;
+}
+.moinst-nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: oklch(0.7 0.13 75);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Shimmer para skeletons */
+@keyframes moinst-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.moinst-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.9 0 0) 0%,
+    oklch(0.95 0 0) 50%,
+    oklch(0.9 0 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: moinst-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Focus ring mejorado para accesibilidad */
+*:focus-visible {
+  outline: 2px solid oklch(0.45 0.09 195);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbar más fina para paneles internos */
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}

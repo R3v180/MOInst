@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
     if (!isNaN(d.getTime())) where.AND.push({ startAt: { lte: d } });
   }
 
+  if (where.AND && where.AND.length === 0) delete where.AND;
   const items = await db.appointment.findMany({
     where,
     include: {
