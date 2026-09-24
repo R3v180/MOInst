@@ -115,16 +115,28 @@ export async function POST(req: NextRequest) {
   }
 
   // Construye la conversación para el modelo
-  // Contexto enriquecido: fecha actual + counts rápidos para que el modelo sepa qué hay
+  // Contexto enriquecido: fecha actual + counts + listas de entidades (names+ids)
+  // para que el modelo pueda hacer matching directo sin consultar (acelera create flows)
   let quickContext = `Contexto: usuario actual id=${user.id}, nombre=${user.name}, rol=${user.role}. Para crear citas, usa assignedToId=${user.id} por defecto. Fecha actual: ${new Date().toISOString().slice(0, 10)}.`;
   try {
-    const [clientCount, articleCount, supplierCount, openIncidents] = await Promise.all([
-      db.client.count(),
-      db.article.count(),
-      db.supplier.count(),
+    const [clients, articles, suppliers, openIncidents] = await Promise.all([
+      db.client.findMany({ select: { id: true, name: true, phonePrimary: true, city: true }, take: 30, orderBy: { name: "asc" } }),
+      db.article.findMany({ select: { id: true, name: true, internalCode: true, category: true }, take: 30, orderBy: { name: "asc" } }),
+      db.supplier.findMany({ select: { id: true, name: true }, take: 20, orderBy: { name: "asc" } }),
       db.incident.count({ where: { status: { in: ["OPEN", "IN_RESOLUTION"] } } }),
     ]);
-    quickContext += ` Resumen BD: ${clientCount} clientes, ${articleCount} artículos, ${supplierCount} proveedores, ${openIncidents} incidencias abiertas.`;
+    quickContext += `\nResumen BD: ${clients.length} clientes, ${articles.length} artículos, ${suppliers.length} proveedores, ${openIncidents} incidencias abiertas.`;
+    // Listas para matching directo (el modelo NO necesita consultar para hallar IDs)
+    if (clients.length > 0) {
+      quickContext += "\n\nCLIENTES (id | nombre | teléfono | ciudad):\n" + clients.map(c => `- ${c.id} | ${c.name} | ${c.phonePrimary ?? "—"} | ${c.city ?? "—"}`).join("\n");
+    }
+    if (articles.length > 0) {
+      quickContext += "\n\nARTÍCULOS (id | nombre | código | categoría):\n" + articles.map(a => `- ${a.id} | ${a.name} | ${a.internalCode} | ${a.category}`).join("\n");
+    }
+    if (suppliers.length > 0) {
+      quickContext += "\n\nPROVEEDORES (id | nombre):\n" + suppliers.map(s => `- ${s.id} | ${s.name}`).join("\n");
+    }
+    quickContext += "\n\nIMPORTANTE: usa estos IDs directamente en tus acciones json-action (no necesitas consultar la BD para hallarlos). Solo consulta si necesitas datos no listados aquí (instalaciones, presupuestos, etc.).";
   } catch {}
 
   const messages: ChatMessage[] = [

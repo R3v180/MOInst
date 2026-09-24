@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDateTime, formatDate, formatRelative, daysUntil, fullAddress } from "@/lib/format";
 import {
   CalendarDays, Users, Wrench, Siren, FileText, ClipboardList, ShieldAlert, Sparkles,
-  TrendingUp, MapPin, Clock, PackageX, Package, Activity,
+  TrendingUp, MapPin, Clock, PackageX, Package, Activity, Snowflake, Thermometer, Plus,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -79,6 +79,7 @@ export function DashboardView() {
   }
 
   const c = data.counts;
+  const isEmpty = c.clients === 0 && c.installations === 0 && c.saleOrders === 0;
   const cards = [
     { label: "Clientes", value: c.clients, icon: Users, view: "clients" as const, color: "text-primary" },
     { label: "Instalaciones", value: c.installations, icon: Wrench, view: "installations" as const, color: "text-primary" },
@@ -88,6 +89,31 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6">
+      {isEmpty && (
+        <Card className="border-primary/30 bg-gradient-to-br from-primary/5 via-transparent to-accent/10">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0">
+                <Snowflake className="w-6 h-6 text-primary" />
+                <Thermometer className="w-6 h-6 text-accent-foreground absolute mix-blend-multiply opacity-60" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold mb-1">¡Bienvenido a MOInst!</h2>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Tu base de datos está vacía. Empieza creando tu primer cliente o usa el asistente IA para configurar todo rápidamente.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => setView("clients")}><Plus className="w-4 h-4 mr-1.5" /> Crear cliente</Button>
+                  <Button size="sm" variant="outline" onClick={() => setView("articles")}><Package className="w-4 h-4 mr-1.5" /> Crear artículo</Button>
+                  <Button size="sm" variant="outline" onClick={() => useAppStore.getState().setAiPanelOpen(true)}>
+                    <Sparkles className="w-4 h-4 mr-1.5" /> Preguntar a la IA
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 moinst-section-gradient -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 rounded-lg">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Panel</h1>

@@ -766,3 +766,43 @@ Stage Summary:
   * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-REVIEW-7
+Agent: main (cron webDevReview)
+Task: QA + AI optimization (pre-inject entity lists) + dashboard welcome state
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con 3 charts + quick actions ✓. Navegación 14 módulos ✓. 0 errores runtime. IA consulta lectura ✓ (~10s). Estado ESTABLE.
+
+FEATURES NUEVAS:
+1. **AI optimization: pre-inject entity lists** (`src/app/api/ai/chat/route.ts`):
+   - Antes: el contexto inyectado solo tenía counts (N clientes, N artículos...). El LLM tenía que emitir json-query para hallar el clientId por nombre → 1-2 rondas extra del bucle agéntico (~7-10s adicionales).
+   - Ahora: el contexto incluye listas reales (take 30) de clientes (id+nombre+teléfono+ciudad), artículos (id+nombre+código+categoría) y proveedores (id+nombre). El LLM puede hacer matching directo del nombre al ID sin consultar.
+   - Instrucción explícita: "usa estos IDs directamente en tus acciones json-action (no necesitas consultar la BD para hallarlos). Solo consulta si necesitas datos no listados aquí (instalaciones, presupuestos, etc.)."
+   - **Verificado E2E**: pedí "Crea un presupuesto para el cliente Juan Garcia Perez con 1 split Daikin a 800 y mano de obra 200". La IA respondió inmediatamente: "Voy a crear un presupuesto para Juan Garcia Perez con los detalles que indicas." → **1 action card** → sin ronda de consulta extra. Tiempo total ~15s (antes ~25s). **Mejora de ~10s.**
+
+2. **Dashboard welcome state** (`src/components/views/dashboard-view.tsx`):
+   - Cuando la BD está vacía (clients===0 && installations===0 && saleOrders===0), muestra un card "¡Bienvenido a MOInst!" con:
+     - Logo Snowflake+Thermometer en círculo bg-primary/15.
+     - Mensaje: "Tu base de datos está vacía. Empieza creando tu primer cliente o usa el asistente IA..."
+     - 3 botones: "Crear cliente" (→ clients), "Crear artículo" (→ articles), "Preguntar a la IA" (abre panel IA).
+     - Card con gradiente sutil from-primary/5 via-transparent to-accent/10 + border-primary/30.
+   - Solo aparece cuando isEmpty=true (no molesta cuando ya hay datos).
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con 3 charts ✓ + quick actions ✓.
+- IA create_sale_quote con pre-injected entities: respuesta inmediata (sin query extra), 1 action card, ~15s total (mejora vs ~25s anterior).
+- Lint: 0 errores.
+- Screenshot: /home/z/my-project/download/moinst-dashboard-v8.png.
+
+Stage Summary:
+- Estado: ESTABLE. 1 optimization crítica (AI pre-inject entities, -10s en create flows) + 1 feature nueva (dashboard welcome state). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * Las listas pre-inyectadas (take 30) pueden ser insuficientes si hay >30 clientes/artículos. Considerar paginación o solo inyectar los más recientes/buscados.
+  * El contexto crece con las listas (~2KB extra) — puede aumentar el coste de tokens del LLM. Aceptable para 2 socios.
+  * El welcome state no se ha probado con BD vacía (la BD actual tiene 1 cliente). Verificar en futuro reset.
+  * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.
