@@ -10,6 +10,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/shared/page-header";
@@ -28,6 +39,7 @@ import {
   Package,
   LineChart,
   Search,
+  Trash2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,6 +60,7 @@ export function SupplierDetailView() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<any>(null);
   const [showAddArticle, setShowAddArticle] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: supplier, isLoading } = useQuery({
     queryKey: ["supplier", id],
@@ -102,6 +115,24 @@ export function SupplierDetailView() {
       toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/suppliers/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al eliminar");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Proveedor eliminado" });
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      qc.invalidateQueries({ queryKey: ["articles"] });
+      setView("suppliers");
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   if (isLoading || !supplier) {
     return (
       <div className="space-y-4">
@@ -137,6 +168,32 @@ export function SupplierDetailView() {
             <Button variant="outline" onClick={openEdit}>
               <Pencil className="w-4 h-4 mr-2" /> Editar
             </Button>
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+                  <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar proveedor</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    ¿Eliminar el proveedor <strong>{supplier.name}</strong>? Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteMut.mutate()}
+                    disabled={deleteMut.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button onClick={() => setShowAddArticle(true)}>
               <Plus className="w-4 h-4 mr-2" /> Añadir artículo
             </Button>

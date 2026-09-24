@@ -1,14 +1,14 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore, type ViewKey } from "@/store/app-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { formatCurrency, formatDateTime, formatDate, daysUntil, fullAddress } from "@/lib/format";
+import { formatCurrency, formatDateTime, formatDate, formatRelative, daysUntil, fullAddress } from "@/lib/format";
 import {
   CalendarDays, Users, Wrench, Siren, FileText, ClipboardList, ShieldAlert, Sparkles,
-  TrendingUp, MapPin, Clock, PackageX, Package,
+  TrendingUp, MapPin, Clock, PackageX, Package, Activity,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,6 +23,25 @@ const BAR_COLORS = [
   "var(--color-chart-5)",
   "var(--color-chart-1)",
 ];
+
+// ── Metadatos por tipo para la línea de tiempo de actividad reciente ──
+type ActivityType = "client" | "saleQuote" | "saleOrder" | "incident" | "installation" | "appointment";
+interface ActivityMeta {
+  icon: React.ComponentType<{ className?: string }>;
+  iconColor: string;
+  borderColor: string;
+  bgHover: string;
+  detailView: ViewKey;
+}
+const ACTIVITY_META: Record<ActivityType, ActivityMeta> = {
+  client: { icon: Users, iconColor: "text-teal-600 dark:text-teal-400", borderColor: "border-l-teal-500", bgHover: "hover:bg-teal-50/50 dark:hover:bg-teal-950/20", detailView: "client-detail" },
+  saleQuote: { icon: FileText, iconColor: "text-amber-600 dark:text-amber-400", borderColor: "border-l-amber-500", bgHover: "hover:bg-amber-50/50 dark:hover:bg-amber-950/20", detailView: "sale-quote-detail" },
+  saleOrder: { icon: ClipboardList, iconColor: "text-emerald-600 dark:text-emerald-400", borderColor: "border-l-emerald-500", bgHover: "hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20", detailView: "sale-order-detail" },
+  incident: { icon: Siren, iconColor: "text-red-600 dark:text-red-400", borderColor: "border-l-red-500", bgHover: "hover:bg-red-50/50 dark:hover:bg-red-950/20", detailView: "incident-detail" },
+  installation: { icon: Wrench, iconColor: "text-purple-600 dark:text-purple-400", borderColor: "border-l-purple-500", bgHover: "hover:bg-purple-50/50 dark:hover:bg-purple-950/20", detailView: "installation-detail" },
+  // appointment no se fetcha pero se mantiene el tipo para completitud
+  appointment: { icon: CalendarDays, iconColor: "text-primary", borderColor: "border-l-primary", bgHover: "hover:bg-accent", detailView: "agenda" },
+};
 
 function MonthlySalesTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
@@ -201,6 +220,51 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Actividad reciente — timeline de las 8 últimas entidades creadas */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" /> Actividad reciente
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(data.recentActivity ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              Sin actividad reciente
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-[320px] overflow-y-auto scroll-thin -mx-1">
+              {(data.recentActivity ?? []).map((item: any) => {
+                const meta = ACTIVITY_META[item.type as ActivityType] ?? ACTIVITY_META.client;
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={`${item.type}-${item.id}`}
+                    onClick={() => setView(meta.detailView, { id: item.id })}
+                    className={`w-full text-left flex items-center gap-3 p-2 rounded-md border border-transparent border-l-4 ${meta.borderColor} ${meta.bgHover} hover:border-border transition-colors`}
+                  >
+                    <Icon className={`w-4 h-4 shrink-0 ${meta.iconColor}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{item.label}</div>
+                      <div className="text-xs text-muted-foreground truncate">{item.sublabel}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                        <Clock className="w-3 h-3" />
+                        {formatRelative(item.createdAt)}
+                      </div>
+                      {item.status && (
+                        <StatusBadge kind={item.type as any} value={item.status} />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Citas de hoy */}

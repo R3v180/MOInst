@@ -494,3 +494,65 @@ Stage Summary:
   * Confirmación de acciones destructivas (delete): sigue sin diálogos de confirmación (low risk con 2 socios, pero bueno añadir).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
   * Screenshot de referencia: /home/z/my-project/download/moinst-dark-notifications.png.
+
+---
+Task ID: CRON-3-A
+Agent: full-stack-developer
+Task: Delete confirmation AlertDialogs in 6 detail views
+
+Work Log:
+- Leí worklog.md (estado actual hasta CRON-REVIEW-2 + nota "confirmación de acciones destructivas (delete): sigue sin diálogos de confirmación" como pendiente).
+- Verifiqué que `src/components/ui/alert-dialog.tsx` exporta los 11 componentes requeridos (AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction). AlertDialogAction usa `buttonVariants()` + merge className → el className `bg-destructive text-destructive-foreground hover:bg-destructive/90` del enunciado sobreescribe el variant default correctamente.
+- Verifiqué que existen los 6 DELETE endpoints: /api/clients/[id], /api/installations/[id], /api/articles/[id], /api/suppliers/[id], /api/sale-quotes/[id], /api/incidents/[id] (todos con `export async function DELETE`).
+- Para cada uno de los 6 detail views, hice 4 ediciones puntuales (sin tocar fetch, queries, ni form dialogs existentes):
+  1. Import block: añadí import de AlertDialog parts (después del Dialog import existente). Si Trash2 no estaba importado, lo añadí al import de lucide-react.
+  2. State: añadí `const [deleteOpen, setDeleteOpen] = useState(false);` junto al resto de estados UI.
+  3. Mutation: añadí `deleteMut = useMutation({ ... })` después de la última mutation existente (clients: tras updateMut; installations: tras deleteMaintMut; articles: tras addPriceMut; suppliers: tras addArticleMut; sale-quotes: tras generateOrderMut; incidents: tras closeMut). Cada mutation hace fetch DELETE /api/{entidad}/{id}, parsea JSON solo si !r.ok (con `.catch(() => ({}))`), onSuccess muestra toast, invalida la query list y dashboard, y llama `setView("{plural}")`.
+  4. AlertDialog: trigger Button (variant=outline size=sm con `text-destructive hover:bg-destructive/10`) + AlertDialogContent (title + description + footer Cancelar/Eliminar con Action `bg-destructive text-destructive-foreground hover:bg-destructive/90`). El botón Eliminar muestra Loader2 si `deleteMut.isPending`.
+- Para sale-quote-detail-view: el AlertDialog completo (trigger + content) se renderiza DENTRO del bloque `{status === "DRAFT" && (...)}` (después del botón "Enviar por email" en la rama no-editando). Si el presupuesto está SENT/ACCEPTED, no se renderiza el trigger ni el content.
+- Para incident-detail-view: el AlertDialog se añade entre el botón "Cerrar incidencia" (condicional a !isClosed) y el AttachmentUploader compact, sin condicionante de estado (toda incidencia se puede eliminar).
+- Trazabilidad de la UI: para mantener la jerarquía visual, el botón "Eliminar" se colocó SIEMPRE después de "Editar" (en client-detail, entre "Editar" e "Instalación"; en installation-detail, entre "Editar" y "Nueva incidencia"; en article-detail, entre "Editar" y "Asociar proveedor"; en supplier-detail, entre "Editar" y "Añadir artículo"; en sale-quote-detail, al final de la rama no-editando; en incident-detail, entre "Cerrar incidencia" y AttachmentUploader).
+
+Stage Summary:
+- Archivos modificados (6): src/components/views/{client,installation,article,supplier,sale-quote,incident}-detail-view.tsx.
+- Decisiones clave:
+  * AlertDialog completo (trigger + content) inline en actions de PageHeader — Radix AlertDialog usa Portal para el content, así que no hay problema de layout al montarlo dentro del PageHeader actions fragment.
+  * Trigger Button con `variant="outline" size="sm" className="text-destructive hover:bg-destructive/10"` (siguiendo el patrón del enunciado: visualmente distinto del Editar outline puro, pero menos agresivo que un `variant="destructive"` sólido).
+  * Action Button con `className="bg-destructive text-destructive-foreground hover:bg-destructive/90"` + `disabled={deleteMut.isPending}`. El spinner Loader2 animado en estado pending es decorativo: Radix cierra el AlertDialog al click del Action (comportamiento default), la mutation dispara en paralelo. Esto sigue el patrón del enunciado literalmente.
+  * Sale-quote: el dialog solo se monta si `status === "DRAFT"` — para presupuestos SENT/ACCEPTED no aparece el botón Eliminar (en vez de mostrarlo disabled), siguiendo la sugerencia "disable OR hide" del enunciado. Hide es más limpio porque evita abrir un AlertDialog sin sentido para estados no borrables.
+  * Toast onSuccess: "Cliente eliminado", "Instalación eliminada", "Artículo eliminado", "Proveedor eliminado", "Presupuesto eliminado", "Incidencia eliminada" (consistencia con el resto de toasts de mutation del proyecto).
+  * Invalidaciones: query list de la entidad + `dashboard` (los counts del sidebar/bell de notificaciones podrían cambiar al borrar un cliente con incidencias, etc.).
+  * Navegación post-delete: `setView("{plural}")` — vuelve al listado correspondiente (clients, installations, articles, suppliers, sale-quotes, incidents).
+  * No se modificó la lógica de fetch/queries ni los form dialogs existentes (Edit, AddSupplier, AddArticle, Email, Preview, Close, MaintenanceForm, etc.) — solo adición pura de botón + AlertDialog + mutation.
+- Verificación:
+  * Dev server OK: `curl http://localhost:3000/` → 200 (todos los views compilan estáticamente desde app-shell.tsx, así que cualquier error TS/JSX habría roto la home).
+  * Sin errores ni warnings en /tmp/moinst-dev2.log (solo SIGTERM esperado del pkill final).
+  * `bun run lint` → 0 errores, 0 warnings (exit 0).
+- Registro en /agent-ctx/CRON-3-A-full-stack-developer.md (próximo paso).
+
+---
+Task ID: CRON-3-B
+Agent: full-stack-developer
+Task: Dashboard recent activity feed + styling polish (empty states, tooltips, card hover, sidebar footer)
+
+Work Log:
+- Leí worklog.md (secciones CRON-2-A, CRON-2-B, CRON-REVIEW-2) y archivos de referencia: api/dashboard/route.ts, dashboard-view.tsx, empty-state.tsx, topbar.tsx, notifications-bell.tsx, sidebar-nav.tsx, app-store.ts, format.ts, status-badge.tsx, globals.css, tooltip.tsx (verifiqué que Tooltip ya envuelve TooltipProvider internamente). Revisé prisma/schema.prisma para confirmar: Incident usa `createdBy` (relación "IncidentOpenedBy"), no `openedBy`; SaleOrder no tiene `total`; Attachment es polimórfico (no usar include).
+- Part 1 — Dashboard recent activity feed:
+  * `/api/dashboard/route.ts`: añadidos 5 findMany paralelos (recentClients3, recentSaleQuotes3, recentSaleOrders3, recentIncidents3, recentInstallations3) cada uno `orderBy: { createdAt: "desc" }, take: 3, select: { id, ...campos, createdAt, client: { select: { name } } }`. Incident incluye installation (brand, model, equipmentType). Los resultados se normalizan en JS a `ActivityItem[]` con `{ id, type, label, sublabel, createdAt, status? }`, se ordenan por createdAt desc y se toman 8. Se devuelve como `recentActivity` en la respuesta. Sin tocar las secciones existentes (KPIs, todayAppointments, pendingQuotes, openOrders, openIncidents, warrantyExpiring, pendingMaintenances, counts, recentClients, stats, monthlySales, lowStockArticles).
+  * `dashboard-view.tsx`: añadido `formatRelative` y `Activity` icon a los imports. Definí `ActivityType` union (client|saleQuote|saleOrder|incident|installation|appointment) y `ACTIVITY_META` map con `icon`, `iconColor`, `borderColor`, `bgHover`, `detailView` por tipo. Nuevo Card "Actividad reciente" entre el bloque monthlySales/lowStock y el grid de today/week appointments (full width por defecto, igual que weekAppointments). Cada item es un button con `border-l-4 ${meta.borderColor}` + icon per type + label + sublabel + `formatRelative(createdAt)` + StatusBadge si tiene status. Click → `setView(meta.detailView, { id: item.id })`. Empty state inline: "Sin actividad reciente". Lista con `max-h-[320px] overflow-y-auto scroll-thin`.
+- Part 2 — Styling polish:
+  * `empty-state.tsx`: gradient sutil teal→ámbar (`bg-gradient-to-br from-primary/[0.04] via-transparent to-amber-500/[0.04]`), halo decorativo absoluto detrás del icon, icon container `w-16 h-16 rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/10` (más grande, accent), max-w-md para la descripción.
+  * `topbar.tsx`: añadidos imports `Tooltip, TooltipTrigger, TooltipContent`. ThemeToggle ahora envuelve su Button con `<Tooltip><TooltipTrigger asChild><Button>...</Button></TooltipTrigger><TooltipContent>Cambiar tema</TooltipContent></Tooltip>` internamente (necesario porque ThemeToggle no es forwardRef; el asChild requiere un child forwardRef). NotificationsBell envuelto externamente con `<Tooltip><TooltipTrigger asChild><span className="inline-flex"><NotificationsBell/></span></TooltipTrigger><TooltipContent>Avisos</TooltipContent></Tooltip>` (span wrapper es DOM element que acepta refs). LogOut Button envuelto con `<Tooltip>...Cerrar sesión</Tooltip>`. Eliminé el `title="Cerrar sesión"` redundante del Button (lo reemplazó aria-label). Quité el title del ThemeToggle Button (la info ahora la da el tooltip "Cambiar tema").
+  * `globals.css`: `.moinst-card-hover:hover` ahora añade `border-color: color-mix(in oklch, var(--primary) 30%, var(--border))` + `box-shadow: 0 4px 12px -2px color-mix(in oklch, var(--primary) 18%, transparent)`. color-mix permite capas del primary sobre el border existente (compatible con light + dark themes).
+  * `sidebar-nav.tsx`: añadido `ChevronRight` icon import. User section cambiada de `<div>` estático a `<button onClick={() => setView("settings")}>` con `hover:bg-sidebar-accent hover:text-sidebar-accent-foreground`, avatar invierte bg en hover (bg-sidebar-accent → bg-sidebar), ChevronRight con `group-hover:translate-x-0.5` como cue visual de clicabilidad, focus-visible ring para accesibilidad.
+
+Stage Summary:
+- Archivos modificados (6): src/app/api/dashboard/route.ts, src/components/views/dashboard-view.tsx, src/components/shared/empty-state.tsx, src/components/app/topbar.tsx, src/app/globals.css, src/components/app/sidebar-nav.tsx. Registro en /agent-ctx/CRON-3-B-full-stack-developer.md.
+- Decisiones clave:
+  * recentActivity = top 3 de cada tipo (client/saleQuote/saleOrder/incident/installation) ordenados por createdAt desc, merge en JS, sort por createdAt desc, take 8. type union incluye 'appointment' por completitud pero NO se fetcha (per task: "fetch the latest 3 of each type (clients, saleQuotes, saleOrders, incidents, installations)").
+  * Para incident usamos `createdAt` (cuando se registró en el sistema) en lugar de `openedAt`; ambos existen en el modelo pero createdAt encaja mejor con el espíritu "what happened recently" del timeline.
+  * ThemeToggle envuelve Tooltip INTERNAMENTE (no en el call site) porque es una plain function component sin forwardRef; el asChild de TooltipTrigger requiere un child que acepte refs (Button shadcn sí lo hace). Esto evita el warning "Function components cannot be given refs".
+  * NotificationsBell envuelto externamente con `<span className="inline-flex">` como wrapper DOM para que Slot.cloneElement pueda mergear ref + handlers. El Popover dentro de NotificationsBell sigue funcionando (click → abre popover; hover → muestra tooltip).
+  * .moinst-card-hover usa `color-mix(in oklch, var(--primary) 30%, var(--border))` en vez de un color hardcoded — así el border del primary se mezcla con el border existente (soporta light/dark themes sin overrides).
+  * Sidebar user row: ChevronRight con group-hover translate es un cue visual sutil sin sobrecargar. Avatar bg invierte en hover (accent → sidebar) para reforzar el feedback.
+- Verificación: dev server OK (home=200, dashboard=401 esperado — sin auth; la ruta funciona post-login). `bun run lint`: 0 errores, 0 warnings. Sin PrismaClientValidationError (no se usa `include: { attachments }`, no `where: { AND: [] }` vacío, no `openedBy`, no `total` en SaleOrder).

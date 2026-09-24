@@ -12,6 +12,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -21,7 +32,7 @@ import { formatDateTime, formatDate, formatCurrency } from "@/lib/format";
 import {
   Pencil, Loader2, Siren, Wrench, ClipboardList,
   Truck, Package, Building2, ChevronRight, Link2, CheckCircle2,
-  ExternalLink, Image as ImageIcon,
+  ExternalLink, Image as ImageIcon, Trash2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -31,6 +42,7 @@ export function IncidentDetailView() {
   const qc = useQueryClient();
   const [showEdit, setShowEdit] = useState(false);
   const [showClose, setShowClose] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: inc, isLoading } = useQuery({
     queryKey: ["incident", id],
@@ -115,6 +127,24 @@ export function IncidentDetailView() {
       toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/incidents/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al eliminar");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Incidencia eliminada" });
+      qc.invalidateQueries({ queryKey: ["incidents"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      setView("incidents");
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   if (isLoading || !inc) {
     return (
       <div className="space-y-4">
@@ -145,6 +175,32 @@ export function IncidentDetailView() {
                 <CheckCircle2 className="w-4 h-4 mr-2" /> Cerrar incidencia
               </Button>
             )}
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+                  <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar incidencia</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    ¿Eliminar la incidencia <strong>{inc.number}</strong>? Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteMut.mutate()}
+                    disabled={deleteMut.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <AttachmentUploader
               entityType="INCIDENT"
               entityId={id}

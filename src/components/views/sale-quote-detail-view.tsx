@@ -11,6 +11,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -69,6 +80,7 @@ export function SaleQuoteDetailView() {
   const [draft, setDraft] = useState<any>(null);
   const [showEmail, setShowEmail] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: quote, isLoading } = useQuery({
     queryKey: ["sale-quote", id],
@@ -144,6 +156,24 @@ export function SaleQuoteDetailView() {
       qc.invalidateQueries({ queryKey: ["sale-quotes"] });
       qc.invalidateQueries({ queryKey: ["sale-orders"] });
       setView("sale-order-detail", { id: data.id });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/sale-quotes/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al eliminar");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Presupuesto eliminado" });
+      qc.invalidateQueries({ queryKey: ["sale-quotes"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      setView("sale-quotes");
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -336,6 +366,34 @@ export function SaleQuoteDetailView() {
                 <Button variant="outline" onClick={() => setShowEmail(true)}>
                   <Mail className="w-4 h-4 mr-2" /> Enviar por email
                 </Button>
+                {status === "DRAFT" && (
+                  <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+                        <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Eliminar presupuesto</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          ¿Eliminar el presupuesto <strong>{quote.number}</strong>? Esta acción no se puede deshacer.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => deleteMut.mutate()}
+                          disabled={deleteMut.isPending}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                          Eliminar
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </>
             )}
           </>

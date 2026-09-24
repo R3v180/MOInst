@@ -29,6 +29,11 @@ export async function GET() {
     stats,
     monthlySalesRaw,
     lowStockArticles,
+    recentClients3,
+    recentSaleQuotes3,
+    recentSaleOrders3,
+    recentIncidents3,
+    recentInstallations3,
   ] = await Promise.all([
     db.appointment.findMany({
       where: { startAt: { gte: startOfDay, lt: endOfDay }, status: "PENDING" },
@@ -106,7 +111,138 @@ export async function GET() {
       orderBy: [{ stock: "asc" }, { name: "asc" }],
       take: 50,
     }),
+    // ─── Actividad reciente: top 3 de cada tipo, ordenados por createdAt desc ───
+    // Se mezclan todos en JS, se ordenan por createdAt desc y se toman 8.
+    // Cada item se normaliza a { id, type, label, sublabel, createdAt, status? }.
+    db.client.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        phonePrimary: true,
+        createdAt: true,
+      },
+    }),
+    db.saleQuote.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        createdAt: true,
+        client: { select: { name: true } },
+      },
+    }),
+    db.saleOrder.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        createdAt: true,
+        client: { select: { name: true } },
+      },
+    }),
+    // Incident opener es `createdBy` (relación "IncidentOpenedBy"), NO `openedBy`.
+    // El modelo tiene `openedAt` y `createdAt`; usamos `createdAt` para el timeline
+    // (cuando se registró la incidencia en el sistema).
+    db.incident.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        createdAt: true,
+        client: { select: { name: true } },
+        installation: { select: { brand: true, model: true, equipmentType: true } },
+      },
+    }),
+    db.installation.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: {
+        id: true,
+        equipmentType: true,
+        brand: true,
+        model: true,
+        status: true,
+        createdAt: true,
+        client: { select: { name: true } },
+      },
+    }),
   ]);
+
+  // ── Construir recentActivity (merge + sort + take 8) ──
+  type ActivityType = "client" | "saleQuote" | "saleOrder" | "incident" | "installation";
+  interface ActivityItem {
+    id: string;
+    type: ActivityType;
+    label: string;
+    sublabel: string;
+    createdAt: string;
+    status?: string;
+  }
+  const activityItems: ActivityItem[] = [];
+  for (const c of recentClients3) {
+    activityItems.push({
+      id: c.id,
+      type: "client",
+      label: c.name,
+      sublabel: [c.city, c.phonePrimary].filter(Boolean).join(" · ") || "Nuevo cliente",
+      createdAt: c.createdAt,
+    });
+  }
+  for (const q of recentSaleQuotes3) {
+    activityItems.push({
+      id: q.id,
+      type: "saleQuote",
+      label: q.number,
+      sublabel: q.client?.name ?? "—",
+      createdAt: q.createdAt,
+      status: q.status,
+    });
+  }
+  for (const o of recentSaleOrders3) {
+    activityItems.push({
+      id: o.id,
+      type: "saleOrder",
+      label: o.number,
+      sublabel: o.client?.name ?? "—",
+      createdAt: o.createdAt,
+      status: o.status,
+    });
+  }
+  for (const i of recentIncidents3) {
+    const instLabel = i.installation
+      ? [i.installation.brand, i.installation.model].filter(Boolean).join(" ") || i.installation.equipmentType
+      : null;
+    activityItems.push({
+      id: i.id,
+      type: "incident",
+      label: i.number,
+      sublabel: [i.client?.name, instLabel].filter(Boolean).join(" · ") || "Incidencia",
+      createdAt: i.createdAt,
+      status: i.status,
+    });
+  }
+  for (const inst of recentInstallations3) {
+    const instLabel = [inst.brand, inst.model].filter(Boolean).join(" ") || inst.equipmentType;
+    activityItems.push({
+      id: inst.id,
+      type: "installation",
+      label: instLabel,
+      sublabel: inst.client?.name ?? "—",
+      createdAt: inst.createdAt,
+      status: inst.status,
+    });
+  }
+  activityItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const recentActivity = activityItems.slice(0, 8);
 
   // Márgenes de garantía
   const warrantyWithDays = warrantyExpiring.map((i) => ({
@@ -168,6 +304,7 @@ export async function GET() {
     stats: stats.map((s) => ({ status: s.status, count: s._count })),
     monthlySales,
     lowStockArticles: lowStock,
+    recentActivity,
     currentUser: user,
   });
 }

@@ -175,6 +175,8 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 .moinst-card-hover:hover {
   transform: translateY(-1px);
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
+  box-shadow: 0 4px 12px -2px color-mix(in oklch, var(--primary) 18%, transparent);
 }
 
 /* Gradiente sutil para cabeceras de sección */

@@ -14,6 +14,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   actions?: AiActionCard[];
+  matchedSummary?: { matched: number; notFound: number; supplier?: string } | null;
 }
 
 interface AiActionCard {
@@ -85,7 +86,7 @@ export function AiChatPanel() {
       } else {
         setMessages((p) => [
           ...p,
-          { role: "assistant", content: data.text, actions: data.actions ?? [] },
+          { role: "assistant", content: data.text, actions: data.actions ?? [], matchedSummary: data.matchedSummary ?? null },
         ]);
       }
     } catch (e: any) {
@@ -177,6 +178,19 @@ export function AiChatPanel() {
                     {m.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                   </div>
                   <div className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", m.role === "user" ? "bg-primary text-primary-foreground" : "bg-background border border-border")}>
+                    {m.matchedSummary && (
+                      <div className="mb-2 rounded-md bg-primary/10 border border-primary/20 px-2 py-1.5 text-[11px] flex items-center gap-2 flex-wrap">
+                        <Paperclip className="w-3 h-3 text-primary shrink-0" />
+                        <span className="font-medium text-primary">Lista de precios procesada:</span>
+                        <span className="text-green-600 font-medium">{m.matchedSummary.matched} encontrados</span>
+                        {m.matchedSummary.notFound > 0 && (
+                          <span className="text-amber-600 font-medium">{m.matchedSummary.notFound} nuevos</span>
+                        )}
+                        {m.matchedSummary.supplier && (
+                          <span className="text-muted-foreground">· {m.matchedSummary.supplier}</span>
+                        )}
+                      </div>
+                    )}
                     <div className="whitespace-pre-wrap break-words">{m.content}</div>
                     {m.actions && m.actions.length > 0 && (
                       <div className="mt-2 space-y-2">

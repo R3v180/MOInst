@@ -10,11 +10,22 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDate, formatDateTime, fullAddress } from "@/lib/format";
 import {
-  Phone, Mail, MapPin, Wrench, FileText, ClipboardList, Siren, CalendarDays, Plus, Save, Loader2, Pencil, Users,
+  Phone, Mail, MapPin, Wrench, FileText, ClipboardList, Siren, CalendarDays, Plus, Save, Loader2, Pencil, Users, Trash2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,6 +36,7 @@ export function ClientDetailView() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<any>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
@@ -48,6 +60,24 @@ export function ClientDetailView() {
       qc.invalidateQueries({ queryKey: ["client", id] });
       qc.invalidateQueries({ queryKey: ["clients"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al eliminar");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cliente eliminado" });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      setView("clients");
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -85,6 +115,32 @@ export function ClientDetailView() {
             <Button variant="outline" onClick={openEdit}>
               <Pencil className="w-4 h-4 mr-2" /> Editar
             </Button>
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+                  <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar cliente</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    ¿Seguro que quieres eliminar a <strong>{client.name}</strong>? Esta acción no se puede deshacer. Se eliminarán también sus instalaciones, presupuestos, pedidos e incidencias asociadas.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteMut.mutate()}
+                    disabled={deleteMut.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button onClick={() => setView("installations")}>
               <Plus className="w-4 h-4 mr-2" /> Instalación
             </Button>

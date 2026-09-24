@@ -8,7 +8,7 @@ import {
   parseAiResponse,
   type ReadQuery,
 } from "@/lib/ai/tools";
-import { parseAttachedFile, buildAttachmentInstruction } from "@/lib/ai/file-parse";
+import { parseAttachedFile, buildAttachmentInstruction, looksLikePriceList, extractPriceListRows, buildMatchedPriceListInstruction } from "@/lib/ai/file-parse";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -57,10 +57,62 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Mensaje vacío" }, { status: 400 });
   }
 
-  // Contenido final del mensaje del usuario (con archivo inyectado si procede)
-  const userContent = parsedFile
-    ? buildAttachmentInstruction(parsedFile, message || "(sin mensaje adicional)")
-    : message;
+  // Contenido final del mensaje del usuario.
+  // Si hay archivo y parece una lista de precios, hacemos MATCHING en BD antes
+  // de llamar al LLM para que reciba articleIds concretos y proponga acciones directamente.
+  let userContent: string;
+  let matchedSummary: { matched: number; notFound: number; supplier?: string } | null = null;
+
+  if (parsedFile && looksLikePriceList(parsedFile)) {
+    const priceRows = extractPriceListRows(parsedFile);
+    if (priceRows.length > 0) {
+      // Detectar proveedor mencionado en el mensaje del usuario (búsqueda por nombre)
+      let supplierHint: { id: string; name: string } | null = null;
+      const suppliers = await db.supplier.findMany({ select: { id: true, name: true } });
+      const msgLower = message.toLowerCase();
+      for (const s of suppliers) {
+        if (s.name && msgLower.includes(s.name.toLowerCase())) {
+          supplierHint = s;
+          break;
+        }
+      }
+
+      // Matching de artículos por nombre (contains, insensitive) o internalCode
+      const matched = await Promise.all(
+        priceRows.slice(0, 30).map(async (row) => {
+          let article: { id: string; name: string; internalCode: string } | undefined = undefined;
+          if (row.reference) {
+            const byCode = await db.article.findFirst({
+              where: { internalCode: { equals: row.reference, mode: "insensitive" } },
+              select: { id: true, name: true, internalCode: true },
+            });
+            if (byCode) article = byCode;
+          }
+          if (!article && row.name) {
+            const byName = await db.article.findFirst({
+              where: { name: { contains: row.name, mode: "insensitive" } },
+              select: { id: true, name: true, internalCode: true },
+            });
+            if (byName) article = byName;
+          }
+          return { input: row, article };
+        })
+      );
+
+      userContent = buildMatchedPriceListInstruction(parsedFile, message || "(sin mensaje)", matched, supplierHint);
+      matchedSummary = {
+        matched: matched.filter((m) => m.article).length,
+        notFound: matched.filter((m) => !m.article).length,
+        supplier: supplierHint?.name,
+      };
+    } else {
+      userContent = buildAttachmentInstruction(parsedFile, message || "(sin mensaje adicional)");
+    }
+  } else if (parsedFile) {
+    userContent = buildAttachmentInstruction(parsedFile, message || "(sin mensaje adicional)");
+  } else {
+    userContent = message;
+  }
 
   // Construye la conversación para el modelo
   const messages: ChatMessage[] = [
@@ -160,5 +212,6 @@ export async function POST(req: NextRequest) {
     text: finalText || "(sin respuesta)",
     actions,
     fileName: parsedFile?.name ?? null,
+    matchedSummary,
   });
 }

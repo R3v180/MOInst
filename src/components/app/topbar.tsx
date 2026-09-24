@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "@/components/app/sidebar-nav";
 import { NotificationsBell } from "@/components/app/notifications-bell";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   Search,
   Menu,
@@ -66,16 +67,20 @@ function ThemeToggle() {
   // resolvedTheme accounts for "system" (use it for the icon); theme is the user's stored pref.
   const isDark = (resolvedTheme ?? theme) === "dark";
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="hidden md:flex"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-      aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-    >
-      {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden md:flex"
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+          aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        >
+          {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Cambiar tema</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -231,15 +236,27 @@ export function TopBar() {
             IA
           </Button>
           <ThemeToggle />
-          <NotificationsBell />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => signOut({ callbackUrl: "/" })}
-            title="Cerrar sesión"
-          >
-            <LogOut className="w-5 h-5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <NotificationsBell />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Avisos</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => signOut({ callbackUrl: "/" })}
+                aria-label="Cerrar sesión"
+              >
+                <LogOut className="w-5 h-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Cerrar sesión</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </header>

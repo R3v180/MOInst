@@ -12,6 +12,17 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/page-header";
@@ -30,6 +41,7 @@ import {
   TriangleAlert,
   ClipboardList,
   FileText,
+  Trash2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,6 +79,7 @@ export function ArticleDetailView() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<any>(null);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: article, isLoading } = useQuery({
     queryKey: ["article", id],
@@ -121,6 +134,24 @@ export function ArticleDetailView() {
       toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/articles/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al eliminar");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Artículo eliminado" });
+      qc.invalidateQueries({ queryKey: ["articles"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      setView("articles");
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   if (isLoading || !article) {
     return (
       <div className="space-y-4">
@@ -156,6 +187,32 @@ export function ArticleDetailView() {
             <Button variant="outline" onClick={openEdit}>
               <Pencil className="w-4 h-4 mr-2" /> Editar
             </Button>
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+                  <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Eliminar artículo</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    ¿Eliminar el artículo <strong>{article.name}</strong>? Se perderá el histórico de precios asociado.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => deleteMut.mutate()}
+                    disabled={deleteMut.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button onClick={() => setShowAddSupplier(true)}>
               <Plus className="w-4 h-4 mr-2" /> Asociar proveedor
             </Button>

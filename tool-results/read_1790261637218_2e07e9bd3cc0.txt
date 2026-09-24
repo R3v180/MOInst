@@ -1,0 +1,922 @@
+     1→"use client";
+     2→
+     3→import { useMemo, useState } from "react";
+     4→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     5→import { useAppStore } from "@/store/app-store";
+     6→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+     7→import { Button } from "@/components/ui/button";
+     8→import { Input } from "@/components/ui/input";
+     9→import { Label } from "@/components/ui/label";
+    10→import { Textarea } from "@/components/ui/textarea";
+    11→import { Badge } from "@/components/ui/badge";
+    12→import { Checkbox } from "@/components/ui/checkbox";
+    13→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+    14→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+    15→import {
+    16→  AlertDialog,
+    17→  AlertDialogAction,
+    18→  AlertDialogCancel,
+    19→  AlertDialogContent,
+    20→  AlertDialogDescription,
+    21→  AlertDialogFooter,
+    22→  AlertDialogHeader,
+    23→  AlertDialogTitle,
+    24→  AlertDialogTrigger,
+    25→} from "@/components/ui/alert-dialog";
+    26→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+    27→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    28→import { PageHeader } from "@/components/shared/page-header";
+    29→import { EmptyState } from "@/components/shared/empty-state";
+    30→import { StatusBadge } from "@/components/shared/status-badge";
+    31→import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
+    32→import {
+    33→  Package,
+    34→  Pencil,
+    35→  Save,
+    36→  Loader2,
+    37→  Plus,
+    38→  Truck,
+    39→  LineChart,
+    40→  Boxes,
+    41→  TriangleAlert,
+    42→  ClipboardList,
+    43→  FileText,
+    44→  Trash2,
+    45→} from "lucide-react";
+    46→import { toast } from "@/hooks/use-toast";
+    47→import { Skeleton } from "@/components/ui/skeleton";
+    48→import {
+    49→  LineChart as ReLineChart,
+    50→  Line,
+    51→  XAxis,
+    52→  YAxis,
+    53→  CartesianGrid,
+    54→  Tooltip,
+    55→  ResponsiveContainer,
+    56→  Legend,
+    57→} from "recharts";
+    58→
+    59→const TYPE_LABELS: Record<string, string> = {
+    60→  SERIALIZED: "Serializado",
+    61→  CONSUMABLE: "Consumible",
+    62→};
+    63→
+    64→const CHART_COLORS = [
+    65→  "#0d9488", // teal-600
+    66→  "#d97706", // amber-600
+    67→  "#7c3aed", // violet-600
+    68→  "#dc2626", // red-600
+    69→  "#2563eb", // blue-600 — uso interno de gráfico, no de UI general
+    70→  "#059669", // emerald-600
+    71→  "#c026d3", // fuchsia-600
+    72→  "#65a30d", // lime-600
+    73→];
+    74→
+    75→export function ArticleDetailView() {
+    76→  const { params, setView } = useAppStore();
+    77→  const id = params.id;
+    78→  const qc = useQueryClient();
+    79→  const [editing, setEditing] = useState(false);
+    80→  const [draft, setDraft] = useState<any>(null);
+    81→  const [showAddSupplier, setShowAddSupplier] = useState(false);
+    82→  const [deleteOpen, setDeleteOpen] = useState(false);
+    83→
+    84→  const { data: article, isLoading } = useQuery({
+    85→    queryKey: ["article", id],
+    86→    queryFn: () => fetch(`/api/articles/${id}`).then((r) => r.json()),
+    87→    enabled: !!id,
+    88→  });
+    89→
+    90→  const updateMut = useMutation({
+    91→    mutationFn: async (payload: any) => {
+    92→      const r = await fetch(`/api/articles/${id}`, {
+    93→        method: "PUT",
+    94→        headers: { "Content-Type": "application/json" },
+    95→        body: JSON.stringify(payload),
+    96→      });
+    97→      if (!r.ok) {
+    98→        const e = await r.json();
+    99→        throw new Error(e.error ?? "Error");
+   100→      }
+   101→      return r.json();
+   102→    },
+   103→    onSuccess: () => {
+   104→      toast({ title: "Artículo actualizado" });
+   105→      setEditing(false);
+   106→      qc.invalidateQueries({ queryKey: ["article", id] });
+   107→      qc.invalidateQueries({ queryKey: ["articles"] });
+   108→    },
+   109→    onError: (e: any) =>
+   110→      toast({ title: "Error", description: e.message, variant: "destructive" }),
+   111→  });
+   112→
+   113→  const addPriceMut = useMutation({
+   114→    mutationFn: async (payload: any) => {
+   115→      const r = await fetch("/api/article-suppliers", {
+   116→        method: "POST",
+   117→        headers: { "Content-Type": "application/json" },
+   118→        body: JSON.stringify({ ...payload, articleId: id }),
+   119→      });
+   120→      if (!r.ok) {
+   121→        const e = await r.json();
+   122→        throw new Error(e.error ?? "Error");
+   123→      }
+   124→      return r.json();
+   125→    },
+   126→    onSuccess: () => {
+   127→      toast({ title: "Precio añadido al histórico" });
+   128→      setShowAddSupplier(false);
+   129→      qc.invalidateQueries({ queryKey: ["article", id] });
+   130→      qc.invalidateQueries({ queryKey: ["articles"] });
+   131→      qc.invalidateQueries({ queryKey: ["price-history", id] });
+   132→    },
+   133→    onError: (e: any) =>
+   134→      toast({ title: "Error", description: e.message, variant: "destructive" }),
+   135→  });
+   136→
+   137→  const deleteMut = useMutation({
+   138→    mutationFn: async () => {
+   139→      const r = await fetch(`/api/articles/${id}`, { method: "DELETE" });
+   140→      if (!r.ok) {
+   141→        const e = await r.json().catch(() => ({}));
+   142→        throw new Error(e.error ?? "Error al eliminar");
+   143→      }
+   144→      return r.json();
+   145→    },
+   146→    onSuccess: () => {
+   147→      toast({ title: "Artículo eliminado" });
+   148→      qc.invalidateQueries({ queryKey: ["articles"] });
+   149→      qc.invalidateQueries({ queryKey: ["dashboard"] });
+   150→      setView("articles");
+   151→    },
+   152→    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+   153→  });
+   154→
+   155→  if (isLoading || !article) {
+   156→    return (
+   157→      <div className="space-y-4">
+   158→        <Skeleton className="h-20" />
+   159→        <Skeleton className="h-64" />
+   160→      </div>
+   161→    );
+   162→  }
+   163→
+   164→  const openEdit = () => {
+   165→    setDraft({
+   166→      internalCode: article.internalCode ?? "",
+   167→      name: article.name ?? "",
+   168→      category: article.category ?? "",
+   169→      articleType: article.articleType ?? "CONSUMABLE",
+   170→      unit: article.unit ?? "unidad",
+   171→      brand: article.brand ?? "",
+   172→      description: article.description ?? "",
+   173→      stock: article.stock ?? 0,
+   174→      stockMin: article.stockMin ?? 0,
+   175→    });
+   176→    setEditing(true);
+   177→  };
+   178→
+   179→  return (
+   180→    <div>
+   181→      <PageHeader
+   182→        title={article.name}
+   183→        description={`${article.internalCode} · ${article.brand ?? "Sin marca"}`}
+   184→        backTo="articles"
+   185→        actions={
+   186→          <>
+   187→            <Button variant="outline" onClick={openEdit}>
+   188→              <Pencil className="w-4 h-4 mr-2" /> Editar
+   189→            </Button>
+   190→            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+   191→              <AlertDialogTrigger asChild>
+   192→                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
+   193→                  <Trash2 className="w-4 h-4 mr-2" /> Eliminar
+   194→                </Button>
+   195→              </AlertDialogTrigger>
+   196→              <AlertDialogContent>
+   197→                <AlertDialogHeader>
+   198→                  <AlertDialogTitle>Eliminar artículo</AlertDialogTitle>
+   199→                  <AlertDialogDescription>
+   200→                    ¿Eliminar el artículo <strong>{article.name}</strong>? Se perderá el histórico de precios asociado.
+   201→                  </AlertDialogDescription>
+   202→                </AlertDialogHeader>
+   203→                <AlertDialogFooter>
+   204→                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+   205→                  <AlertDialogAction
+   206→                    onClick={() => deleteMut.mutate()}
+   207→                    disabled={deleteMut.isPending}
+   208→                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+   209→                  >
+   210→                    {deleteMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+   211→                    Eliminar
+   212→                  </AlertDialogAction>
+   213→                </AlertDialogFooter>
+   214→              </AlertDialogContent>
+   215→            </AlertDialog>
+   216→            <Button onClick={() => setShowAddSupplier(true)}>
+   217→              <Plus className="w-4 h-4 mr-2" /> Asociar proveedor
+   218→            </Button>
+   219→          </>
+   220→        }
+   221→      />
+   222→
+   223→      <Tabs defaultValue="data" className="space-y-4">
+   224→        <TabsList className="flex flex-wrap h-auto">
+   225→          <TabsTrigger value="data">Datos</TabsTrigger>
+   226→          <TabsTrigger value="prices">
+   227→            Proveedores y precios ({article.currentPrices?.length ?? 0})
+   228→          </TabsTrigger>
+   229→          <TabsTrigger value="usage">
+   230→            Usado en ({article.saleQuoteLines?.length ?? 0}/{article.saleOrderLines?.length ?? 0})
+   231→          </TabsTrigger>
+   232→        </TabsList>
+   233→
+   234→        {/* Datos */}
+   235→        <TabsContent value="data">
+   236→          <Card>
+   237→            <CardContent className="p-4 sm:p-6 grid gap-4 sm:grid-cols-2">
+   238→              <Info label="Código interno" value={article.internalCode} />
+   239→              <Info label="Tipo" value={TYPE_LABELS[article.articleType] ?? article.articleType} />
+   240→              <Info label="Categoría" value={article.category} />
+   241→              <Info label="Marca" value={article.brand} icon={<Boxes className="w-4 h-4" />} />
+   242→              <Info label="Unidad" value={article.unit} />
+   243→              <Info label="Descripción" value={article.description} className="sm:col-span-2" />
+   244→              <div className="sm:col-span-2 grid grid-cols-2 gap-4 pt-2 border-t border-border">
+   245→                <Info label="Stock actual" value={article.stock} />
+   246→                <Info label="Stock mínimo" value={article.stockMin} />
+   247→              </div>
+   248→              {article.stock <= article.stockMin && (
+   249→                <div className="sm:col-span-2 flex items-center gap-2 text-destructive text-sm bg-destructive/10 rounded-md px-3 py-2">
+   250→                  <TriangleAlert className="w-4 h-4" /> Stock igual o por debajo del mínimo
+   251→                </div>
+   252→              )}
+   253→            </CardContent>
+   254→          </Card>
+   255→        </TabsContent>
+   256→
+   257→        {/* Proveedores y precios */}
+   258→        <TabsContent value="prices">
+   259→          <div className="space-y-4">
+   260→            <Card>
+   261→              <CardHeader>
+   262→                <CardTitle className="text-base flex items-center gap-2">
+   263→                  <Truck className="w-4 h-4 text-primary" /> Precios actuales por proveedor
+   264→                </CardTitle>
+   265→              </CardHeader>
+   266→              <CardContent className="p-0">
+   267→                {article.currentPrices?.length ? (
+   268→                  <Table>
+   269→                    <TableHeader>
+   270→                      <TableRow>
+   271→                        <TableHead className="pl-4">Proveedor</TableHead>
+   272→                        <TableHead className="text-right">Precio actual</TableHead>
+   273→                        <TableHead>Fecha</TableHead>
+   274→                        <TableHead>Ref. proveedor</TableHead>
+   275→                        <TableHead>Entrega</TableHead>
+   276→                        <TableHead className="pr-4">Estado</TableHead>
+   277→                      </TableRow>
+   278→                    </TableHeader>
+   279→                    <TableBody>
+   280→                      {article.currentPrices.map((ap: any, idx: number) => (
+   281→                        <TableRow key={ap.id} className={idx === 0 ? "bg-primary/5" : ""}>
+   282→                          <TableCell className="pl-4 font-medium">
+   283→                            <button
+   284→                              className="text-left hover:underline"
+   285→                              onClick={() => setView("supplier-detail", { id: ap.supplierId })}
+   286→                            >
+   287→                              {ap.supplier?.name ?? "Proveedor"}
+   288→                            </button>
+   289→                          </TableCell>
+   290→                          <TableCell className="text-right font-semibold">
+   291→                            {formatCurrency(ap.price)}
+   292→                          </TableCell>
+   293→                          <TableCell>{formatDate(ap.priceDate)}</TableCell>
+   294→                          <TableCell className="text-muted-foreground">
+   295→                            {ap.supplierRef || "—"}
+   296→                          </TableCell>
+   297→                          <TableCell className="text-muted-foreground">
+   298→                            {ap.deliveryDays != null ? `${ap.deliveryDays} días` : "—"}
+   299→                          </TableCell>
+   300→                          <TableCell className="pr-4">
+   301→                            {idx === 0 ? (
+   302→                              <Badge className="bg-primary text-primary-foreground">Mejor</Badge>
+   303→                            ) : (
+   304→                              <span className="text-xs text-muted-foreground">
+   305→                                +{Math.round(ap.price - article.currentPrices[0].price)}€
+   306→                              </span>
+   307→                            )}
+   308→                          </TableCell>
+   309→                        </TableRow>
+   310→                      ))}
+   311→                    </TableBody>
+   312→                  </Table>
+   313→                ) : (
+   314→                  <EmptyState
+   315→                    icon={<Truck className="w-6 h-6" />}
+   316→                    title="Sin proveedores asociados"
+   317→                    description="Asocia un proveedor y registra el precio actual."
+   318→                    action={
+   319→                      <Button onClick={() => setShowAddSupplier(true)}>
+   320→                        <Plus className="w-4 h-4 mr-2" /> Asociar proveedor
+   321→                      </Button>
+   322→                    }
+   323→                    className="py-8"
+   324→                  />
+   325→                )}
+   326→              </CardContent>
+   327→            </Card>
+   328→
+   329→            <PriceHistoryCard articleId={id} />
+   330→          </div>
+   331→        </TabsContent>
+   332→
+   333→        {/* Usado en */}
+   334→        <TabsContent value="usage">
+   335→          <Card>
+   336→            <CardContent className="p-4 space-y-4">
+   337→              <div>
+   338→                <div className="text-sm font-medium flex items-center gap-1.5 mb-2">
+   339→                  <FileText className="w-4 h-4 text-primary" /> Presupuestos recientes
+   340→                </div>
+   341→                {article.saleQuoteLines?.length ? (
+   342→                  <ul className="divide-y divide-border">
+   343→                    {article.saleQuoteLines.map((l: any) => (
+   344→                      <li key={l.id}>
+   345→                        <button
+   346→                          className="w-full text-left py-2 px-2 -mx-2 hover:bg-accent rounded flex items-center gap-3"
+   347→                          onClick={() => setView("sale-quote-detail", { id: l.saleQuote?.id })}
+   348→                        >
+   349→                          <FileText className="w-4 h-4 text-primary shrink-0" />
+   350→                          <div className="min-w-0 flex-1">
+   351→                            <div className="text-sm font-medium">
+   352→                              {l.saleQuote?.number ?? "—"}
+   353→                              {l.saleQuote?.client ? (
+   354→                                <span className="text-muted-foreground"> · {l.saleQuote.client.name}</span>
+   355→                              ) : null}
+   356→                            </div>
+   357→                            <div className="text-xs text-muted-foreground truncate">
+   358→                              {l.description} · {l.quantity} × {formatCurrency(l.unitPrice)}
+   359→                              {l.discount ? ` (-${l.discount}%)` : ""}
+   360→                            </div>
+   361→                          </div>
+   362→                          <div className="text-sm font-semibold whitespace-nowrap">
+   363→                            {formatCurrency(l.subtotal)}
+   364→                          </div>
+   365→                          {l.saleQuote?.status && (
+   366→                            <StatusBadge kind="saleQuote" value={l.saleQuote.status} />
+   367→                          )}
+   368→                        </button>
+   369→                      </li>
+   370→                    ))}
+   371→                  </ul>
+   372→                ) : (
+   373→                  <p className="text-sm text-muted-foreground">Sin uso en presupuestos.</p>
+   374→                )}
+   375→              </div>
+   376→
+   377→              <div className="pt-2 border-t border-border">
+   378→                <div className="text-sm font-medium flex items-center gap-1.5 mb-2">
+   379→                  <ClipboardList className="w-4 h-4 text-primary" /> Pedidos de venta recientes
+   380→                </div>
+   381→                {article.saleOrderLines?.length ? (
+   382→                  <ul className="divide-y divide-border">
+   383→                    {article.saleOrderLines.map((l: any) => (
+   384→                      <li key={l.id}>
+   385→                        <button
+   386→                          className="w-full text-left py-2 px-2 -mx-2 hover:bg-accent rounded flex items-center gap-3"
+   387→                          onClick={() => setView("sale-order-detail", { id: l.saleOrder?.id })}
+   388→                        >
+   389→                          <ClipboardList className="w-4 h-4 text-primary shrink-0" />
+   390→                          <div className="min-w-0 flex-1">
+   391→                            <div className="text-sm font-medium">
+   392→                              {l.saleOrder?.number ?? "—"}
+   393→                              {l.saleOrder?.client ? (
+   394→                                <span className="text-muted-foreground"> · {l.saleOrder.client.name}</span>
+   395→                              ) : null}
+   396→                            </div>
+   397→                            <div className="text-xs text-muted-foreground truncate">
+   398→                              {l.description} · {l.quantity} × {formatCurrency(l.unitPrice)}
+   399→                            </div>
+   400→                          </div>
+   401→                          <div className="text-sm font-semibold whitespace-nowrap">
+   402→                            {formatCurrency(l.subtotal)}
+   403→                          </div>
+   404→                          {l.saleOrder?.status && (
+   405→                            <StatusBadge kind="saleOrder" value={l.saleOrder.status} />
+   406→                          )}
+   407→                        </button>
+   408→                      </li>
+   409→                    ))}
+   410→                  </ul>
+   411→                ) : (
+   412→                  <p className="text-sm text-muted-foreground">Sin uso en pedidos de venta.</p>
+   413→                )}
+   414→              </div>
+   415→            </CardContent>
+   416→          </Card>
+   417→        </TabsContent>
+   418→      </Tabs>
+   419→
+   420→      {/* Edit dialog */}
+   421→      <Dialog open={editing} onOpenChange={setEditing}>
+   422→        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+   423→          <DialogHeader>
+   424→            <DialogTitle>Editar artículo</DialogTitle>
+   425→          </DialogHeader>
+   426→          {draft && (
+   427→            <div className="space-y-3">
+   428→              <div className="grid grid-cols-2 gap-3">
+   429→                <div>
+   430→                  <Label>Código interno *</Label>
+   431→                  <Input
+   432→                    value={draft.internalCode}
+   433→                    onChange={(e) => setDraft({ ...draft, internalCode: e.target.value })}
+   434→                  />
+   435→                </div>
+   436→                <div>
+   437→                  <Label>Tipo</Label>
+   438→                  <Select
+   439→                    value={draft.articleType}
+   440→                    onValueChange={(v) => setDraft({ ...draft, articleType: v })}
+   441→                  >
+   442→                    <SelectTrigger><SelectValue /></SelectTrigger>
+   443→                    <SelectContent>
+   444→                      <SelectItem value="SERIALIZED">Serializado</SelectItem>
+   445→                      <SelectItem value="CONSUMABLE">Consumible</SelectItem>
+   446→                    </SelectContent>
+   447→                  </Select>
+   448→                </div>
+   449→              </div>
+   450→              <div>
+   451→                <Label>Nombre *</Label>
+   452→                <Input
+   453→                  value={draft.name}
+   454→                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+   455→                />
+   456→              </div>
+   457→              <div className="grid grid-cols-2 gap-3">
+   458→                <div>
+   459→                  <Label>Categoría</Label>
+   460→                  <Input
+   461→                    value={draft.category}
+   462→                    onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+   463→                  />
+   464→                </div>
+   465→                <div>
+   466→                  <Label>Marca</Label>
+   467→                  <Input
+   468→                    value={draft.brand}
+   469→                    onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
+   470→                  />
+   471→                </div>
+   472→              </div>
+   473→              <div className="grid grid-cols-3 gap-3">
+   474→                <div>
+   475→                  <Label>Unidad</Label>
+   476→                  <Input
+   477→                    value={draft.unit}
+   478→                    onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
+   479→                  />
+   480→                </div>
+   481→                <div>
+   482→                  <Label>Stock</Label>
+   483→                  <Input
+   484→                    type="number"
+   485→                    step="0.01"
+   486→                    value={draft.stock}
+   487→                    onChange={(e) => setDraft({ ...draft, stock: parseFloat(e.target.value) || 0 })}
+   488→                  />
+   489→                </div>
+   490→                <div>
+   491→                  <Label>Stock mínimo</Label>
+   492→                  <Input
+   493→                    type="number"
+   494→                    step="0.01"
+   495→                    value={draft.stockMin}
+   496→                    onChange={(e) => setDraft({ ...draft, stockMin: parseFloat(e.target.value) || 0 })}
+   497→                  />
+   498→                </div>
+   499→              </div>
+   500→              <div>
+   501→                <Label>Descripción</Label>
+   502→                <Textarea
+   503→                  rows={3}
+   504→                  value={draft.description}
+   505→                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+   506→                />
+   507→              </div>
+   508→            </div>
+   509→          )}
+   510→          <DialogFooter>
+   511→            <Button variant="outline" onClick={() => setEditing(false)}>Cancelar</Button>
+   512→            <Button onClick={() => updateMut.mutate(draft)} disabled={updateMut.isPending}>
+   513→              {updateMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+   514→              Guardar
+   515→            </Button>
+   516→          </DialogFooter>
+   517→        </DialogContent>
+   518→      </Dialog>
+   519→
+   520→      {/* Asociar proveedor */}
+   521→      <AddSupplierDialog
+   522→        open={showAddSupplier}
+   523→        onOpenChange={setShowAddSupplier}
+   524→        articleInternalCode={article.internalCode}
+   525→        articleName={article.name}
+   526→        existingSupplierIds={(article.currentPrices ?? []).map((p: any) => p.supplierId)}
+   527→        onSubmit={(payload) => addPriceMut.mutate(payload)}
+   528→        loading={addPriceMut.isPending}
+   529→      />
+   530→    </div>
+   531→  );
+   532→}
+   533→
+   534→// ─── Sub-componente: histórico de precios con gráfico ──────────────────────
+   535→function PriceHistoryCard({ articleId }: { articleId: string }) {
+   536→  const [open, setOpen] = useState(false);
+   537→  return (
+   538→    <Card>
+   539→      <CardHeader className="flex flex-row items-center justify-between">
+   540→        <CardTitle className="text-base flex items-center gap-2">
+   541→          <LineChart className="w-4 h-4 text-primary" /> Histórico de precios
+   542→        </CardTitle>
+   543→        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+   544→          <LineChart className="w-4 h-4 mr-2" /> Ver histórico
+   545→        </Button>
+   546→      </CardHeader>
+   547→      <CardContent className="pt-0">
+   548→        <p className="text-sm text-muted-foreground">
+   549→          Consulta la evolución del precio por proveedor con gráfico y tabla detallada.
+   550→        </p>
+   551→      </CardContent>
+   552→
+   553→      <PriceHistoryDialog
+   554→        open={open}
+   555→        onOpenChange={setOpen}
+   556→        articleId={articleId}
+   557→      />
+   558→    </Card>
+   559→  );
+   560→}
+   561→
+   562→function PriceHistoryDialog({
+   563→  open,
+   564→  onOpenChange,
+   565→  articleId,
+   566→}: {
+   567→  open: boolean;
+   568→  onOpenChange: (v: boolean) => void;
+   569→  articleId: string;
+   570→}) {
+   571→  const { data, isLoading } = useQuery({
+   572→    queryKey: ["price-history", articleId],
+   573→    queryFn: () => fetch(`/api/articles/${articleId}/price-history`).then((r) => r.json()),
+   574→    enabled: open && !!articleId,
+   575→  });
+   576→
+   577→  const suppliers = data?.suppliers ?? [];
+   578→  const rows = data?.rows ?? [];
+   579→
+   580→  const [off, setOff] = useState<Record<string, boolean>>({});
+   581→  const isSelected = (sid: string) => !off[sid];
+   582→
+   583→  // Pivotar datos para recharts: cada priceDate → { date, [supplierId]: price }
+   584→  const chartData = useMemo(() => {
+   585→    const byDate = new Map<string, any>();
+   586→    for (const r of rows) {
+   587→      if (off[r.supplierId]) continue;
+   588→      const key = new Date(r.priceDate).getTime();
+   589→      const entry = byDate.get(key) ?? { ts: key, dateLabel: formatDate(r.priceDate) };
+   590→      entry[r.supplierId] = r.price;
+   591→      entry[`${r.supplierId}_name`] = r.supplierName;
+   592→      byDate.set(key, entry);
+   593→    }
+   594→    return Array.from(byDate.values()).sort((a, b) => a.ts - b.ts);
+   595→  }, [rows, off]);
+   596→
+   597→  const visibleSuppliers = suppliers.filter((s: any) => !off[s.id]);
+   598→
+   599→  return (
+   600→    <Dialog open={open} onOpenChange={onOpenChange}>
+   601→      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto scroll-thin">
+   602→        <DialogHeader>
+   603→          <DialogTitle>Histórico de precios</DialogTitle>
+   604→        </DialogHeader>
+   605→
+   606→        {isLoading ? (
+   607→          <div className="flex items-center justify-center py-12 text-muted-foreground">
+   608→            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Cargando histórico...
+   609→          </div>
+   610→        ) : rows.length === 0 ? (
+   611→          <EmptyState
+   612→            icon={<LineChart className="w-6 h-6" />}
+   613→            title="Sin histórico"
+   614→            description="Aún no hay precios registrados para este artículo."
+   615→          />
+   616→        ) : (
+   617→          <div className="space-y-4">
+   618→            {/* Filtros por proveedor */}
+   619→            <div className="flex flex-wrap gap-3">
+   620→              {suppliers.map((s: any) => (
+   621→                <label
+   622→                  key={s.id}
+   623→                  className="flex items-center gap-2 text-sm cursor-pointer border border-border rounded px-2 py-1 hover:bg-accent"
+   624→                >
+   625→                  <Checkbox
+   626→                    checked={isSelected(s.id)}
+   627→                    onCheckedChange={(v) =>
+   628→                      setOff((p) => {
+   629→                        const next = { ...p };
+   630→                        if (v) delete next[s.id];
+   631→                        else next[s.id] = true;
+   632→                        return next;
+   633→                      })
+   634→                    }
+   635→                  />
+   636→                  <span>{s.name}</span>
+   637→                </label>
+   638→              ))}
+   639→            </div>
+   640→
+   641→            {/* Gráfico */}
+   642→            {visibleSuppliers.length === 0 ? (
+   643→              <p className="text-sm text-muted-foreground py-4 text-center">
+   644→                Selecciona al menos un proveedor para ver el gráfico.
+   645→              </p>
+   646→            ) : (
+   647→              <div className="h-72 w-full border border-border rounded-md p-2">
+   648→                <ResponsiveContainer width="100%" height="100%">
+   649→                  <ReLineChart
+   650→                    data={chartData}
+   651→                    margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
+   652→                  >
+   653→                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+   654→                    <XAxis
+   655→                      dataKey="dateLabel"
+   656→                      tick={{ fontSize: 11 }}
+   657→                      className="text-xs"
+   658→                    />
+   659→                    <YAxis
+   660→                      tick={{ fontSize: 11 }}
+   661→                      tickFormatter={(v) => `${Number(v).toFixed(0)}€`}
+   662→                    />
+   663→                    <Tooltip
+   664→                      formatter={(value: any) => formatCurrency(Number(value))}
+   665→                      labelStyle={{ fontSize: 12 }}
+   666→                    />
+   667→                    <Legend wrapperStyle={{ fontSize: 12 }} />
+   668→                    {visibleSuppliers.map((s: any, idx: number) => (
+   669→                      <Line
+   670→                        key={s.id}
+   671→                        type="monotone"
+   672→                        dataKey={s.id}
+   673→                        name={s.name}
+   674→                        stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+   675→                        connectNulls
+   676→                        dot={{ r: 3 }}
+   677→                        activeDot={{ r: 5 }}
+   678→                      />
+   679→                    ))}
+   680→                  </ReLineChart>
+   681→                </ResponsiveContainer>
+   682→              </div>
+   683→            )}
+   684→
+   685→            {/* Tabla */}
+   686→            <div className="border border-border rounded-md max-h-72 overflow-y-auto scroll-thin">
+   687→              <Table>
+   688→                <TableHeader className="sticky top-0 bg-background">
+   689→                  <TableRow>
+   690→                    <TableHead className="pl-3">Fecha</TableHead>
+   691→                    <TableHead>Proveedor</TableHead>
+   692→                    <TableHead className="text-right">Precio</TableHead>
+   693→                    <TableHead>Ref.</TableHead>
+   694→                    <TableHead className="pr-3">Entrega</TableHead>
+   695→                  </TableRow>
+   696→                </TableHeader>
+   697→                <TableBody>
+   698→                  {[...rows].reverse().map((r: any) => (
+   699→                    <TableRow
+   700→                      key={r.id}
+   701→                      className={isSelected(r.supplierId) ? "" : "opacity-40"}
+   702→                    >
+   703→                      <TableCell className="pl-3 whitespace-nowrap">
+   704→                        {formatDateTime(r.priceDate)}
+   705→                      </TableCell>
+   706→                      <TableCell>{r.supplierName}</TableCell>
+   707→                      <TableCell className="text-right font-medium">
+   708→                        {formatCurrency(r.price)}
+   709→                      </TableCell>
+   710→                      <TableCell className="text-muted-foreground">
+   711→                        {r.supplierRef || "—"}
+   712→                      </TableCell>
+   713→                      <TableCell className="pr-3 text-muted-foreground">
+   714→                        {r.deliveryDays != null ? `${r.deliveryDays} días` : "—"}
+   715→                      </TableCell>
+   716→                    </TableRow>
+   717→                  ))}
+   718→                </TableBody>
+   719→              </Table>
+   720→            </div>
+   721→          </div>
+   722→        )}
+   723→      </DialogContent>
+   724→    </Dialog>
+   725→  );
+   726→}
+   727→
+   728→// ─── Sub-componente: asociar proveedor + precio ─────────────────────────────
+   729→function AddSupplierDialog({
+   730→  open,
+   731→  onOpenChange,
+   732→  articleInternalCode,
+   733→  articleName,
+   734→  existingSupplierIds,
+   735→  onSubmit,
+   736→  loading,
+   737→}: {
+   738→  open: boolean;
+   739→  onOpenChange: (v: boolean) => void;
+   740→  articleInternalCode: string;
+   741→  articleName: string;
+   742→  existingSupplierIds: string[];
+   743→  onSubmit: (d: any) => void;
+   744→  loading: boolean;
+   745→}) {
+   746→  const [q, setQ] = useState("");
+   747→  const [selectedSupplier, setSelectedSupplier] = useState<string>("");
+   748→  const [d, setD] = useState<any>({});
+   749→  const set = (k: string, v: any) => setD((p) => ({ ...p, [k]: v }));
+   750→
+   751→  const { data: suppliersData, isLoading } = useQuery({
+   752→    queryKey: ["suppliers", q, "for-article"],
+   753→    queryFn: async () => {
+   754→      const p = new URLSearchParams();
+   755→      if (q) p.set("q", q);
+   756→      p.set("pageSize", "50");
+   757→      const r = await fetch(`/api/suppliers?${p.toString()}`);
+   758→      return r.json();
+   759→    },
+   760→    enabled: open,
+   761→  });
+   762→
+   763→  const reset = () => {
+   764→    setQ("");
+   765→    setSelectedSupplier("");
+   766→    setD({});
+   767→  };
+   768→
+   769→  const submit = () => {
+   770→    if (!selectedSupplier) {
+   771→      toast({ title: "Selecciona un proveedor", variant: "destructive" });
+   772→      return;
+   773→    }
+   774→    if (d.price == null || Number(d.price) < 0) {
+   775→      toast({ title: "Precio inválido", variant: "destructive" });
+   776→      return;
+   777→    }
+   778→    onSubmit({
+   779→      supplierId: selectedSupplier,
+   780→      price: Number(d.price),
+   781→      supplierRef: d.supplierRef ?? null,
+   782→      deliveryDays: d.deliveryDays ? Number(d.deliveryDays) : null,
+   783→      notes: d.notes ?? null,
+   784→    });
+   785→    reset();
+   786→  };
+   787→
+   788→  const suppliers = (suppliersData?.items ?? []).filter(
+   789→    (s: any) => !existingSupplierIds.includes(s.id)
+   790→  );
+   791→
+   792→  return (
+   793→    <Dialog
+   794→      open={open}
+   795→      onOpenChange={(v) => {
+   796→        if (!v) reset();
+   797→        onOpenChange(v);
+   798→      }}
+   799→    >
+   800→      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+   801→        <DialogHeader>
+   802→          <DialogTitle>Asociar proveedor y precio</DialogTitle>
+   803→        </DialogHeader>
+   804→        <div className="text-sm text-muted-foreground">
+   805→          Artículo: <span className="font-medium text-foreground">{articleName}</span>{" "}
+   806→          <span className="font-mono">({articleInternalCode})</span>
+   807→        </div>
+   808→
+   809→        <div className="space-y-3">
+   810→          <div>
+   811→            <Label>Buscar proveedor</Label>
+   812→            <Input
+   813→              value={q}
+   814→              onChange={(e) => setQ(e.target.value)}
+   815→              placeholder="Nombre o contacto..."
+   816→            />
+   817→          </div>
+   818→
+   819→          {isLoading ? (
+   820→            <div className="text-sm text-muted-foreground py-2">Cargando...</div>
+   821→          ) : suppliers.length === 0 ? (
+   822→            <p className="text-sm text-muted-foreground py-2">
+   823→              No hay proveedores disponibles. Crea primero el proveedor.
+   824→            </p>
+   825→          ) : (
+   826→            <div className="border border-border rounded-md max-h-48 overflow-y-auto scroll-thin">
+   827→              {suppliers.map((s: any) => (
+   828→                <label
+   829→                  key={s.id}
+   830→                  className="flex items-center gap-2 px-3 py-2 hover:bg-accent cursor-pointer border-b border-border last:border-b-0"
+   831→                >
+   832→                  <input
+   833→                    type="radio"
+   834→                    name="supplier"
+   835→                    checked={selectedSupplier === s.id}
+   836→                    onChange={() => setSelectedSupplier(s.id)}
+   837→                  />
+   838→                  <span className="font-medium text-sm">{s.name}</span>
+   839→                  {s.contactName && (
+   840→                    <span className="text-xs text-muted-foreground">· {s.contactName}</span>
+   841→                  )}
+   842→                </label>
+   843→              ))}
+   844→            </div>
+   845→          )}
+   846→
+   847→          <div className="grid grid-cols-3 gap-3">
+   848→            <div>
+   849→              <Label>Precio (€) *</Label>
+   850→              <Input
+   851→                type="number"
+   852→                step="0.01"
+   853→                value={d.price ?? ""}
+   854→                onChange={(e) => set("price", e.target.value)}
+   855→                placeholder="0.00"
+   856→              />
+   857→            </div>
+   858→            <div>
+   859→              <Label>Días entrega</Label>
+   860→              <Input
+   861→                type="number"
+   862→                value={d.deliveryDays ?? ""}
+   863→                onChange={(e) => set("deliveryDays", e.target.value)}
+   864→                placeholder="ej. 3"
+   865→              />
+   866→            </div>
+   867→            <div>
+   868→              <Label>Ref. proveedor</Label>
+   869→              <Input
+   870→                value={d.supplierRef ?? ""}
+   871→                onChange={(e) => set("supplierRef", e.target.value)}
+   872→              />
+   873→            </div>
+   874→          </div>
+   875→          <div>
+   876→            <Label>Notas</Label>
+   877→            <Textarea
+   878→              rows={2}
+   879→              value={d.notes ?? ""}
+   880→              onChange={(e) => set("notes", e.target.value)}
+   881→              placeholder="ej. oferta válida hasta fin de mes"
+   882→            />
+   883→          </div>
+   884→          <p className="text-xs text-muted-foreground">
+   885→            Se añadirá una nueva fila al histórico (no se sobrescriben precios anteriores).
+   886→          </p>
+   887→        </div>
+   888→
+   889→        <DialogFooter>
+   890→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+   891→          <Button onClick={submit} disabled={loading}>
+   892→            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+   893→            Añadir precio
+   894→          </Button>
+   895→        </DialogFooter>
+   896→      </DialogContent>
+   897→    </Dialog>
+   898→  );
+   899→}
+   900→
+   901→function Info({
+   902→  label,
+   903→  value,
+   904→  icon,
+   905→  className,
+   906→}: {
+   907→  label: string;
+   908→  value?: string | number | null;
+   909→  icon?: React.ReactNode;
+   910→  className?: string;
+   911→}) {
+   912→  return (
+   913→    <div className={className}>
+   914→      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+   915→        {icon}
+   916→        {label}
+   917→      </div>
+   918→      <div className="text-sm font-medium mt-0.5">{value ?? "—"}</div>
+   919→    </div>
+   920→  );
+   921→}
+   922→
