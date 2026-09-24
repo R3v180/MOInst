@@ -58,7 +58,7 @@ export function ClientsView() {
       toast({ title: "Cliente creado" });
       qc.invalidateQueries({ queryKey: ["clients"] });
       setShowNew(false);
-      setView("client-detail", { id: client.id });
+      setView("client-detail", { id: client.id }, client.name);
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -147,7 +147,7 @@ export function ClientsView() {
           {items.map((c: any) => (
             <button
               key={c.id}
-              onClick={() => setView("client-detail", { id: c.id })}
+              onClick={() => setView("client-detail", { id: c.id }, c.name)}
               className="text-left"
             >
               <Card className="hover:shadow-md hover:border-primary/40 transition-all h-full">

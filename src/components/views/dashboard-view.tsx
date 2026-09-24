@@ -387,7 +387,7 @@ export function DashboardView() {
               data.todayAppointments.map((a: any) => (
                 <button
                   key={a.id}
-                  onClick={() => a.client && setView("client-detail", { id: a.clientId })}
+                  onClick={() => a.client && setView("client-detail", { id: a.clientId }, a.client.name)}
                   className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-accent border border-transparent hover:border-border"
                 >
                   <div className="text-center shrink-0">
@@ -433,7 +433,7 @@ export function DashboardView() {
                 return (
                   <button
                     key={q.id}
-                    onClick={() => setView("sale-quote-detail", { id: q.id })}
+                    onClick={() => setView("sale-quote-detail", { id: q.id }, q.number)}
                     className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-accent border border-transparent hover:border-border"
                   >
                     <div className="min-w-0 flex-1">
@@ -470,7 +470,7 @@ export function DashboardView() {
               data.openIncidents.map((i: any) => (
                 <button
                   key={i.id}
-                  onClick={() => setView("incident-detail", { id: i.id })}
+                  onClick={() => setView("incident-detail", { id: i.id }, i.number)}
                   className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-accent border border-transparent hover:border-border"
                 >
                   <div className="min-w-0 flex-1">
@@ -503,7 +503,7 @@ export function DashboardView() {
               data.warrantyExpiring.map((w: any) => (
                 <button
                   key={w.id}
-                  onClick={() => setView("installation-detail", { id: w.id })}
+                  onClick={() => setView("installation-detail", { id: w.id }, [w.brand, w.model].filter(Boolean).join(" ") || w.equipmentType)}
                   className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-accent border border-transparent hover:border-border"
                 >
                   <div className="min-w-0 flex-1">
@@ -538,7 +538,7 @@ export function DashboardView() {
               {data.weekAppointments.map((a: any) => (
                 <button
                   key={a.id}
-                  onClick={() => a.clientId && setView("client-detail", { id: a.clientId })}
+                  onClick={() => a.clientId && setView("client-detail", { id: a.clientId }, a.client?.name || "Cliente")}
                   className="text-left p-2 rounded-md hover:bg-accent border border-border"
                 >
                   <div className="text-xs text-muted-foreground">

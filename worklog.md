@@ -806,3 +806,38 @@ Stage Summary:
   * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-REVIEW-8
+Agent: main (cron webDevReview)
+Task: QA + recently viewed quick-access chips in topbar
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con 3 charts + quick actions ✓. Navegación 14 módulos ✓. 0 errores runtime. IA consulta lectura ✓ ("Hay 1 cliente en la base de datos"). Estado ESTABLE.
+
+FEATURES NUEVAS:
+1. **Recently viewed quick-access** (`src/store/app-store.ts` + `src/components/app/recently-viewed.tsx` + `src/components/app/topbar.tsx`):
+   - El store ahora trackea `recent: RecentItem[]` (max 8, dedup por view+id) cuando se navega a un detail view con un label.
+   - `setView(view, params, label)` acepta un 3er argumento `label` opcional — si es un detail view (client-detail, installation-detail, etc.) y hay label, se añade al historial.
+   - Nuevo componente `RecentlyViewed` en el topbar: fila horizontal de chips con icono por tipo + label truncado. Click en un chip navega al detail view correspondiente. Visible solo en lg+ (no estorba en móvil). Icono Clock al inicio. Scroll horizontal con scroll-thin si hay overflow.
+   - Iconos por tipo: Users (client), Wrench (installation), Package (article), Truck (supplier), FileText (sale-quote/purchase-quote), ClipboardList (sale-order/purchase-order), Siren (incident).
+   - Actualizados los call sites para pasar el label: clients-view (card click → client.name), dashboard-view (activity feed: client.name, q.number, i.number, installation brand+model, appointment client name).
+   - **Verificado E2E**: navegué a Clientes → click en cliente "Juan Garcia Perez" → h1 "Juan Garcia Perez" ✓. Topbar muestra chip "Juan Garcia Perez" (1 Juan chip detectado). Navegué a Panel → chip sigue visible. Click en chip → vuelve al detail ✓.
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con 3 charts ✓ + quick actions ✓.
+- Navegación 14 módulos ✓, 0 errores runtime.
+- Recently viewed: chip "Juan Garcia Perez" visible en topbar tras navegar al detail ✓. Click en chip navega de vuelta ✓.
+- Lint: 0 errores.
+- Screenshot: /home/z/my-project/download/moinst-recently-viewed.png.
+
+Stage Summary:
+- Estado: ESTABLE. 1 feature nueva (recently viewed quick-access). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * Solo se pasan labels desde clients-view y dashboard-view; otros call sites (sale-order-detail, installation-detail, incident-detail, agenda) no pasan label → no trackean en recent. Considerar actualizar todos los setView detail calls.
+  * El historial es in-memory (se pierde al recargar). Considerar persistir en localStorage.
+  * Los chips solo se ven en lg+ (hidden lg:flex). En móvil no hay acceso rápido a recientes.
+  * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.

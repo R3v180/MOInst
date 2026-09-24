@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "@/components/app/sidebar-nav";
 import { NotificationsBell } from "@/components/app/notifications-bell";
+import { RecentlyViewed } from "@/components/app/recently-viewed";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   Search,
@@ -249,6 +250,7 @@ export function TopBar() {
 
         {/* Actions */}
         <div className="flex items-center gap-1 ml-auto">
+          <RecentlyViewed />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
