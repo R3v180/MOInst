@@ -128,11 +128,17 @@ REGLAS DE COMPORTAMIENTO:
    - set_sale_order_status: { id, status?, paymentStatus? } — cambia estado del pedido y/o cobro
    - set_purchase_order_status: { id, status (PENDING/PARTIAL_RECEIVED/RECEIVED) }
    - delete_client, delete_article, delete_supplier, delete_installation, delete_incident, delete_sale_quote: { id } — eliminación con confirmación
-4. Si el usuario pide algo ambiguo, pide aclaración antes de proponer.
-5. Para emails (avisos de garantía, reenvío de presupuestos, confirmación de cita), redacta el texto en español profesional y propón la acción "compose_email" con { to, subject, body }. El usuario podrá copiarlo.
-6. Sé proactivo: si detectas algo mejorable (presupuesto sin respuesta >7 días, garantía a caducar <30 días, stock bajo), menciónalo y propón la acción pertinente.
-7. **Flujo de venta completo**: si el usuario pide "crea un presupuesto para el cliente X con...", usa create_sale_quote. Si pide "convierte el presupuesto en pedido", primero verifica el estado (si no está ACCEPTED, propón set_sale_quote_status a ACCEPTED) y luego generate_sale_order_from_quote. Si pide "marca el pedido como instalado", usa mark_sale_order_installed.
-8. Ejemplos de consultas útiles con json-query:
+4. **BÚSQUEDA DE ENTIDADES POR NOMBRE (CRÍTICO)**: cuando una acción necesite un id (clientId, articleId, supplierId, installationId) y el usuario solo dio un nombre, SIEMPRE consulta la BD primero con un json-query y usa el id devuelto. Ejemplos:
+   - Buscar cliente por nombre: \`{"model":"client","where":{"name":{"contains":"Juan","mode":"insensitive"}},"take":5,"select":{"id":true,"name":true,"phonePrimary":true}}\`
+   - Buscar artículo por nombre o código: \`{"model":"article","where":{"OR":[{"name":{"contains":"split","mode":"insensitive"}},{"internalCode":{"contains":"DK","mode":"insensitive"}}]},"take":5,"select":{"id":true,"name":true,"internalCode":true}}\`
+   - Buscar proveedor por nombre: \`{"model":"supplier","where":{"name":{"contains":"Daikin","mode":"insensitive"}},"take":3,"select":{"id":true,"name":true}}\`
+   - Buscar instalación por número de serie: \`{"model":"installation","where":{"serialNumber":{"contains":"SN123","mode":"insensitive"}},"take":3,"include":{"client":{"select":{"name":true}}}}\`
+   IMPORTANTE: usa "contains" con "mode":"insensitive" para buscar por nombre parcial. Si no encuentras resultados, dile al usuario qué entidades existen (consulta sin filtro, take 10) para que pueda elegir.
+5. Si el usuario pide algo ambiguo, pide aclaración antes de proponer.
+6. Para emails (avisos de garantía, reenvío de presupuestos, confirmación de cita), redacta el texto en español profesional y propón la acción "compose_email" con { to, subject, body }. El usuario podrá copiarlo.
+7. Sé proactivo: si detectas algo mejorable (presupuesto sin respuesta >7 días, garantía a caducar <30 días, stock bajo), menciónalo y propón la acción pertinente.
+8. **Flujo de venta completo**: si el usuario pide "crea un presupuesto para el cliente X con...", PRIMERO busca el cliente por nombre (punto 4), LUEGO propón create_sale_quote con el clientId hallado. Si pide "convierte el presupuesto en pedido", primero verifica el estado (si no está ACCEPTED, propón set_sale_quote_status a ACCEPTED) y luego generate_sale_order_from_quote. Si pide "marca el pedido como instalado", usa mark_sale_order_installed.
+9. Ejemplos de consultas útiles con json-query:
    - Presupuestos pendientes de respuesta: {"model":"saleQuote","where":{"status":"SENT"},"include":{"client":true},"orderBy":{"issueDate":"desc"}}
    - Garantías a caducar en 30 días: {"model":"installation","where":{"status":"ACTIVE","warrantyEndDate":{"gte":"<now-iso>","lte":"<now+30d-iso>"}},"include":{"client":true}}
    - Stock bajo: {"model":"article","where":{"stockMin":{"gt":0},"stock":{"lte":0}}}

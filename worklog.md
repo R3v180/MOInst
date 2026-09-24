@@ -686,3 +686,44 @@ Stage Summary:
   * El sidebar colapsa pero en móvil el Sheet drawer no se ve afectado (es una vista diferente). Podría añadirse collapse también en móvil.
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: CRON-REVIEW-5
+Agent: main (cron webDevReview)
+Task: QA + fix IA entity matching (system prompt) + donut chart dashboard
+
+Work Log:
+- QA con agent-browser: login ✓, dashboard con quick actions + chart + stock card + actividad reciente ✓. Navegación 14 módulos ✓. 0 errores runtime, 0 TypeError. Estado ESTABLE.
+
+BUG FIX / MEJORA CRÍTICA:
+- **IA no encontraba entidades por nombre** (pendiente de CRON-REVIEW-4): cuando el usuario pedía "crea un presupuesto para el cliente Juan Garcia", el LLM emitía json-query que no matcheaban (búsqueda exacta en vez de contains). 
+- **Fix**: añadida regla 4 explícita al system prompt (`src/lib/ai/tools.ts`) — **"BÚSQUEDA DE ENTIDADES POR NOMBRE (CRÍTICO)"** — con ejemplos concretos de json-query para buscar cliente/artículo/proveedor/instalación por nombre parcial con `contains` + `mode: insensible`. Instrucción: "SIEMPRE consulta la BD primero con un json-query y usa el id devuelto". Y si no encuentra, consultar sin filtro take 10 para que el usuario elija.
+- Regla 8 (flujo de venta) actualizada: "PRIMERO busca el cliente por nombre (punto 4), LUEGO propón create_sale_quote con el clientId hallado".
+- **Verificado E2E**: pedí "Crea un presupuesto de venta para el cliente Juan Garcia Perez con 1 split Daikin 12000 a 800 euros y mano de obra 200". La IA respondió: "Primero buscaré el cliente en la base de datos para obtener su ID. Propongo crear el presupuesto de venta para Juan Garcia Perez con los detalles solicitados." → **1 action card** renderizada. Click "Aplicar" → POST /api/ai/execute 200 → toast ✓ → presupuesto creado (visible "PV-" en el body). **El flujo completo create_sale_quote vía chat funciona end-to-end.**
+
+FEATURES NUEVAS:
+1. **Donut chart en dashboard: "Presupuestos por estado"** (`src/components/views/dashboard-view.tsx`):
+   - recharts PieChart con innerRadius 45 / outerRadius 75 (donut shape).
+   - Datos del `data.stats` existente (saleQuote.groupBy by status).
+   - Colores de la paleta chart-1..5.
+   - Tooltip custom: "N presupuestos" + nombre estado.
+   - Legend en español (Borrador/Enviado/Aceptado/Rechazado/Caducado) con iconType circle.
+   - Solo se renderiza si hay stats (no errores en DB vacía).
+   - Verificado: "DONUT ✓" + 3 SVG charts en el dashboard (bar chart ventas + donut presupuestos + otro).
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con quick actions ✓ + bar chart ✓ + donut chart ✓ + stock card ✓ + actividad reciente ✓.
+- Navegación 5 módulos clave (Clientes, Presupuestos venta, Instalaciones, Agenda, Ajustes): todos cargan ✓.
+- IA create_sale_quote: búsqueda de cliente por nombre → propuesta de acción → click Aplicar → ejecución 200 → presupuesto creado ✓.
+- Lint: 0 errores.
+- Screenshot: /home/z/my-project/download/moinst-dashboard-v6.png.
+
+Stage Summary:
+- Estado: ESTABLE. 1 fix crítico (IA entity matching) + 1 feature nueva (donut chart dashboard). Sin bugs nuevos.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El LLM a veces tarda 20-25s en el bucle agéntico completo (búsqueda + acción). Considerar streaming o mostrar progreso.
+  * El donut chart usa los 5 colores chart-1..5 cíclicamente — si hay más de 5 estados, colores se repiten (aceptable, solo hay 5 estados de presupuesto).
+  * Sidebar collapse en móvil (Sheet drawer) sigue pendiente.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.

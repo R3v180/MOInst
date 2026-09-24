@@ -13,6 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
 } from "recharts";
 
 const BAR_COLORS = [
@@ -291,6 +292,54 @@ export function DashboardView() {
           )}
         </CardContent>
       </Card>
+
+      {/* Donut chart: estados de presupuestos de venta */}
+      {(data.stats ?? []).length > 0 && (
+        <Card>
+          <CardHeader className="pb-3 flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="w-4 h-4 text-primary" /> Presupuestos por estado
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setView("sale-quotes")}>
+              Ver todos
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px] w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={(data.stats ?? []).map((s: any) => ({ name: s.status, value: s.count }))}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={2}
+                  >
+                    {(data.stats ?? []).map((_: any, i: number) => (
+                      <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number, n: string) => [`${v} presupuestos`, n]}
+                    contentStyle={{ fontSize: "12px", borderRadius: "6px" }}
+                  />
+                  <Legend
+                    formatter={(v) => {
+                      const labels: Record<string, string> = { DRAFT: "Borrador", SENT: "Enviado", ACCEPTED: "Aceptado", REJECTED: "Rechazado", EXPIRED: "Caducado" };
+                      return labels[v] ?? v;
+                    }}
+                    iconType="circle"
+                    wrapperStyle={{ fontSize: "11px" }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Citas de hoy */}
