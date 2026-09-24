@@ -556,3 +556,59 @@ Stage Summary:
   * .moinst-card-hover usa `color-mix(in oklch, var(--primary) 30%, var(--border))` en vez de un color hardcoded — así el border del primary se mezcla con el border existente (soporta light/dark themes sin overrides).
   * Sidebar user row: ChevronRight con group-hover translate es un cue visual sutil sin sobrecargar. Avatar bg invierte en hover (accent → sidebar) para reforzar el feedback.
 - Verificación: dev server OK (home=200, dashboard=401 esperado — sin auth; la ruta funciona post-login). `bun run lint`: 0 errores, 0 warnings. Sin PrismaClientValidationError (no se usa `include: { attachments }`, no `where: { AND: [] }` vacío, no `openedBy`, no `total` en SaleOrder).
+
+---
+Task ID: CRON-REVIEW-3
+Agent: main (cron webDevReview)
+Task: Fix users.map regression + mejorar bucle agéntico IA + más acciones IA + quick actions dashboard
+
+Work Log:
+- QA con agent-browser: login ✓, navegación los 14 módulos ✓, IA consulta lectura ✓. Detectado error `users.map is not a function` en MaintenancesView (regresión no fatal, capturada por ErrorBoundary).
+
+BUGS CORREGIDOS:
+1. **`users.map is not a function` en MaintenancesView**: el guard `(usersData as any)?.items ?? (Array.isArray(usersData) ? usersData : [])` no era suficientemente robusto — cuando `usersData` era un objeto sin `.items` (ej. error response), el fallback daba `[]` pero en algún render intermedio `usersData` podía ser un objeto no-array. Fix: guard explícito con `Array.isArray((usersData as any)?.items) ? (usersData as any).items : Array.isArray(usersData) ? usersData : []`. Verificado: 0 errores users.map tras el fix.
+
+FEATURES NUEVAS:
+1. **Bucle agéntico IA mejorado** (`src/app/api/ai/chat/route.ts`):
+   - MAX_ROUNDS 3 → 5 (más rondas para consultas + acciones).
+   - MAX_QUERIES 4 → 6 (más consultas a BD por mensaje).
+   - Contexto enriquecido inyectado: fecha actual + counts rápidos (clientes, artículos, proveedores, incidencias abiertas) para que el modelo sepa qué hay sin consultar.
+   - Resultado de consulta ampliado a 8000 chars (era 6000).
+   - Prompt de realimentación mejorado: "Usa este resultado para redactar la respuesta final o emitir las acciones json-action correspondientes".
+   - Verificado: la IA ahora responde "Actualmente hay **1 cliente** en la base de datos" (usa el contexto inyectado directamente, sin necesidad de consultar).
+
+2. **+8 nuevas acciones de IA** (`src/lib/ai/tools.ts`):
+   - `create_sale_quote`: crea presupuesto PV-AAAA-NNNN con líneas + totales calculados (laborTotal, total).
+   - `generate_sale_order_from_quote`: genera pedido PDV-AAAA-NNNN desde presupuesto ACCEPTED (copia líneas, idempotente).
+   - `create_incident`: abre incidencia INC-AAAA-NNNN.
+   - `set_installation_status`: cambia estado de instalación (ACTIVE/REMOVED/REPLACED).
+   - `set_sale_order_status`: cambia estado del pedido y/o paymentStatus.
+   - `set_purchase_order_status`: cambia estado del pedido de compra.
+   - `delete_client`, `delete_article`, `delete_supplier`, `delete_installation`, `delete_incident`, `delete_sale_quote`: eliminación con confirmación (mapeo a modelo via modelMap).
+   - System prompt actualizado con documentación de cada nueva acción + flujo de venta completo (regla 7: create_sale_quote → set_sale_quote_status → generate_sale_order_from_quote → mark_sale_order_installed).
+
+3. **Dashboard: Quick Actions** (`src/components/views/dashboard-view.tsx`):
+   - Fila de 6 botones de acceso rápido entre la cabecera y los KPIs: Nuevo cliente, Nuevo presupuesto, Nueva instalación, Nueva cita, Nueva incidencia, Nuevo artículo.
+   - Cada botón: icono en círculo bg-primary/10 (hover bg-primary/20), label debajo, card con border hover primary/40.
+   - Click navega al módulo correspondiente (donde el usuario puede crear el nuevo elemento).
+   - Responsive: 2 cols móvil, 3 tablet, 6 desktop.
+
+Verificación E2E con agent-browser (viewport 1280x800, todo en un comando bash):
+- Login ✓, dashboard con quick actions ✓ + chart recharts ✓ + stock card ✓ + actividad reciente ✓.
+- Navegación 14 módulos: todos cargan con su h1 correcto. 0 errores runtime, 0 PrismaClientValidationError, 0 users.map errors.
+- Quick actions: "Nuevo cliente" clickable → navega a Clientes ✓.
+- IA consulta lectura "¿cuántos clientes hay?": respuesta "Actualmente hay **1 cliente** en la base de datos" ✓ (usa contexto enriquecido, responde más rápido).
+- Delete dialog (cliente): click "Eliminar" → AlertDialog "Eliminar cliente ¿Seguro que quieres eliminar a Juan Garcia Perez?..." ✓.
+- Dark mode toggle: funcional ✓.
+- Screenshot: /home/z/my-project/download/moinst-dashboard-v4.png.
+- Lint: 0 errores.
+
+Stage Summary:
+- Estado: ESTABLE. 1 bug fix (users.map), 3 features nuevas (bucle agéntico mejorado, +8 acciones IA, quick actions dashboard). Sin regresiones.
+- Login demo: socio1@moinst.local / moinst123.
+- Riesgos/pendientes para próxima fase:
+  * El bucle agéntico de 5 rondas puede ser lento para consultas complejas (hasta ~25s). Considerar streaming o timeout.
+  * Las nuevas acciones de IA (create_sale_quote, generate_sale_order_from_quote) no se han probado E2E con el browser (solo el backend está implementado). Probar en próxima revisión.
+  * El sidebar tiene 15 items (se añadió Mantenimientos); en pantallas pequeñas el scroll es largo. Considerar agrupar o colapsar.
+  * No hay tests automatizados (por instrucciones).
+  * Email real SMTP: no implementado (compose + copiar), por diseño.

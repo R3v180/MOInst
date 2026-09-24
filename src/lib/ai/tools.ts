@@ -121,10 +121,18 @@ REGLAS DE COMPORTAMIENTO:
    - create_purchase_quote: { supplierId, saleOrderId?, lines: [{ articleId?, description, quantity, unitPrice }], notes? }
    - compose_email: { to?, subject?, body } — NO escribe en BD; redacta el email para que el usuario lo copie/envíe (avisos de garantía, reenvío de presupuestos, confirmación de cita)
    - delete_attachment: { id }
+   - create_sale_quote: { clientId, installationId?, lines: [{ articleId?, description, quantity, unitPrice, discount?, isLabor? }], notes?, validUntil? } — crea presupuesto PV-AAAA-NNNN con líneas y totales calculados
+   - generate_sale_order_from_quote: { saleQuoteId } — genera pedido PDV-AAAA-NNNN desde un presupuesto ACCEPTED (copia líneas)
+   - create_incident: { clientId, installationId?, saleOrderId?, description } — abre incidencia INC-AAAA-NNNN
+   - set_installation_status: { id, status (ACTIVE/REMOVED/REPLACED) }
+   - set_sale_order_status: { id, status?, paymentStatus? } — cambia estado del pedido y/o cobro
+   - set_purchase_order_status: { id, status (PENDING/PARTIAL_RECEIVED/RECEIVED) }
+   - delete_client, delete_article, delete_supplier, delete_installation, delete_incident, delete_sale_quote: { id } — eliminación con confirmación
 4. Si el usuario pide algo ambiguo, pide aclaración antes de proponer.
 5. Para emails (avisos de garantía, reenvío de presupuestos, confirmación de cita), redacta el texto en español profesional y propón la acción "compose_email" con { to, subject, body }. El usuario podrá copiarlo.
 6. Sé proactivo: si detectas algo mejorable (presupuesto sin respuesta >7 días, garantía a caducar <30 días, stock bajo), menciónalo y propón la acción pertinente.
-7. Ejemplos de consultas útiles con json-query:
+7. **Flujo de venta completo**: si el usuario pide "crea un presupuesto para el cliente X con...", usa create_sale_quote. Si pide "convierte el presupuesto en pedido", primero verifica el estado (si no está ACCEPTED, propón set_sale_quote_status a ACCEPTED) y luego generate_sale_order_from_quote. Si pide "marca el pedido como instalado", usa mark_sale_order_installed.
+8. Ejemplos de consultas útiles con json-query:
    - Presupuestos pendientes de respuesta: {"model":"saleQuote","where":{"status":"SENT"},"include":{"client":true},"orderBy":{"issueDate":"desc"}}
    - Garantías a caducar en 30 días: {"model":"installation","where":{"status":"ACTIVE","warrantyEndDate":{"gte":"<now-iso>","lte":"<now+30d-iso>"}},"include":{"client":true}}
    - Stock bajo: {"model":"article","where":{"stockMin":{"gt":0},"stock":{"lte":0}}}
@@ -335,6 +343,173 @@ export async function executeAction(
       } catch {}
       await db.attachment.delete({ where: { id } });
       return { ok: true, summary: `Adjunto ${att.fileName} eliminado` };
+    }
+    case "create_sale_quote": {
+      // Crea un presupuesto de venta con líneas.
+      const { clientId, installationId, lines, notes, validUntil } = payload as any;
+      if (!clientId || !Array.isArray(lines)) return { ok: false, summary: "Faltan clientId o lines" };
+      const computed = lines.map((l: any, i: number) => {
+        const qty = Number(l.quantity ?? 1);
+        const price = Number(l.unitPrice ?? 0);
+        const disc = Number(l.discount ?? 0);
+        const subtotal = Math.round(qty * price * (1 - disc / 100) * 100) / 100;
+        return {
+          articleId: l.articleId ?? null,
+          description: l.description ?? "",
+          quantity: qty,
+          unitPrice: price,
+          discount: disc,
+          subtotal,
+          isLabor: !!l.isLabor,
+          sortOrder: i,
+        };
+      });
+      const laborTotal = computed.filter((l: any) => l.isLabor).reduce((s: number, l: any) => s + l.subtotal, 0);
+      const total = computed.reduce((s: number, l: any) => s + l.subtotal, 0);
+      const year = new Date().getFullYear();
+      const last = await db.saleQuote.findMany({
+        where: { number: { startsWith: `PV-${year}-` } },
+        select: { number: true },
+      });
+      let max = 0;
+      for (const r of last) {
+        const n = parseInt(r.number.split("-").pop() ?? "0", 10);
+        if (n > max) max = n;
+      }
+      const number = `PV-${year}-${String(max + 1).padStart(4, "0")}`;
+      const q = await db.saleQuote.create({
+        data: {
+          number,
+          clientId,
+          installationId: installationId ?? null,
+          status: "DRAFT",
+          laborTotal,
+          total,
+          notes: notes ?? null,
+          validUntil: validUntil ? new Date(validUntil) : null,
+          createdById: userId,
+          lines: { create: computed },
+        },
+      });
+      return { ok: true, summary: `Presupuesto ${number} creado, total ${total}€`, result: q };
+    }
+    case "generate_sale_order_from_quote": {
+      const { saleQuoteId } = payload as any;
+      if (!saleQuoteId) return { ok: false, summary: "Falta saleQuoteId" };
+      const quote = await db.saleQuote.findUnique({
+        where: { id: saleQuoteId },
+        include: { lines: true },
+      });
+      if (!quote) return { ok: false, summary: "Presupuesto no encontrado" };
+      if (quote.status !== "ACCEPTED") return { ok: false, summary: "El presupuesto debe estar ACCEPTED" };
+      // Verificar si ya tiene pedido
+      const existing = await db.saleOrder.findFirst({ where: { sourceSaleQuoteId: saleQuoteId } });
+      if (existing) return { ok: true, summary: `Ya existe pedido ${existing.number}`, result: existing };
+      const year = new Date().getFullYear();
+      const last = await db.saleOrder.findMany({
+        where: { number: { startsWith: `PDV-${year}-` } },
+        select: { number: true },
+      });
+      let max = 0;
+      for (const r of last) {
+        const n = parseInt(r.number.split("-").pop() ?? "0", 10);
+        if (n > max) max = n;
+      }
+      const number = `PDV-${year}-${String(max + 1).padStart(4, "0")}`;
+      const orderLines = quote.lines.map((l: any) => ({
+        articleId: l.articleId,
+        description: l.description,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        discount: l.discount,
+        subtotal: l.subtotal,
+        isLabor: l.isLabor,
+        sortOrder: l.sortOrder,
+      }));
+      const o = await db.saleOrder.create({
+        data: {
+          number,
+          sourceSaleQuoteId: saleQuoteId,
+          clientId: quote.clientId,
+          status: "PENDING",
+          paymentStatus: "PENDING",
+          createdById: userId,
+          lines: { create: orderLines },
+        },
+      });
+      return { ok: true, summary: `Pedido ${number} generado desde presupuesto`, result: o };
+    }
+    case "create_incident": {
+      const { clientId, installationId, saleOrderId, description } = payload as any;
+      if (!clientId || !description) return { ok: false, summary: "Faltan clientId o description" };
+      const year = new Date().getFullYear();
+      const last = await db.incident.findMany({
+        where: { number: { startsWith: `INC-${year}-` } },
+        select: { number: true },
+      });
+      let max = 0;
+      for (const r of last) {
+        const n = parseInt(r.number.split("-").pop() ?? "0", 10);
+        if (n > max) max = n;
+      }
+      const number = `INC-${year}-${String(max + 1).padStart(4, "0")}`;
+      const i = await db.incident.create({
+        data: {
+          number,
+          clientId,
+          installationId: installationId ?? null,
+          saleOrderId: saleOrderId ?? null,
+          description,
+          status: "OPEN",
+          openedById: userId,
+        },
+      });
+      return { ok: true, summary: `Incidencia ${number} abierta`, result: i };
+    }
+    case "set_installation_status": {
+      const { id, status } = payload as any;
+      if (!id || !status) return { ok: false, summary: "Faltan id o status" };
+      const i = await db.installation.update({ where: { id }, data: { status } });
+      return { ok: true, summary: `Instalación → ${status}`, result: i };
+    }
+    case "set_sale_order_status": {
+      const { id, status, paymentStatus } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id" };
+      const data: any = {};
+      if (status) data.status = status;
+      if (paymentStatus) data.paymentStatus = paymentStatus;
+      const o = await db.saleOrder.update({ where: { id }, data });
+      return { ok: true, summary: `Pedido ${o.number} actualizado`, result: o };
+    }
+    case "set_purchase_order_status": {
+      const { id, status } = payload as any;
+      if (!id || !status) return { ok: false, summary: "Faltan id o status" };
+      const o = await db.purchaseOrder.update({ where: { id }, data: { status } });
+      return { ok: true, summary: `Pedido de compra ${o.number} → ${status}`, result: o };
+    }
+    case "delete_client":
+    case "delete_article":
+    case "delete_supplier":
+    case "delete_installation":
+    case "delete_incident":
+    case "delete_sale_quote": {
+      const { id } = payload as any;
+      if (!id) return { ok: false, summary: "Falta id" };
+      const modelMap: Record<string, string> = {
+        delete_client: "client",
+        delete_article: "article",
+        delete_supplier: "supplier",
+        delete_installation: "installation",
+        delete_incident: "incident",
+        delete_sale_quote: "saleQuote",
+      };
+      const modelName = modelMap[type];
+      try {
+        await (db as any)[modelName].delete({ where: { id } });
+        return { ok: true, summary: `${modelName} eliminado` };
+      } catch (e: any) {
+        return { ok: false, summary: `No se pudo eliminar: ${e.message}` };
+      }
     }
     default:
       return { ok: false, summary: `Tipo de acción no soportado: ${type}` };

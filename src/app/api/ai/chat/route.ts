@@ -115,13 +115,21 @@ export async function POST(req: NextRequest) {
   }
 
   // Construye la conversación para el modelo
+  // Contexto enriquecido: fecha actual + counts rápidos para que el modelo sepa qué hay
+  let quickContext = `Contexto: usuario actual id=${user.id}, nombre=${user.name}, rol=${user.role}. Para crear citas, usa assignedToId=${user.id} por defecto. Fecha actual: ${new Date().toISOString().slice(0, 10)}.`;
+  try {
+    const [clientCount, articleCount, supplierCount, openIncidents] = await Promise.all([
+      db.client.count(),
+      db.article.count(),
+      db.supplier.count(),
+      db.incident.count({ where: { status: { in: ["OPEN", "IN_RESOLUTION"] } } }),
+    ]);
+    quickContext += ` Resumen BD: ${clientCount} clientes, ${articleCount} artículos, ${supplierCount} proveedores, ${openIncidents} incidencias abiertas.`;
+  } catch {}
+
   const messages: ChatMessage[] = [
     { role: "assistant", content: AI_SYSTEM_PROMPT },
-    {
-      role: "assistant",
-      content:
-        `Contexto: usuario actual id=${user.id}, nombre=${user.name}, rol=${user.role}. Para crear citas, usa assignedToId=${user.id} por defecto.`,
-    },
+    { role: "assistant", content: quickContext },
     ...history.slice(-10),
     { role: "user", content: userContent },
   ];
@@ -136,11 +144,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Bucle agéntico: hasta 3 rondas para permitir consultas de lectura
+  // Bucle agéntico: hasta 5 rondas para permitir consultas de lectura + acciones
   let finalText = "";
   let actions: any[] = [];
   let usedQueries = 0;
-  const MAX_ROUNDS = 3;
+  const MAX_ROUNDS = 5;
+  const MAX_QUERIES = 6;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     let completion: any;
@@ -166,7 +175,7 @@ export async function POST(req: NextRequest) {
       actions.push(...parsed.actions);
     }
 
-    if (parsed.queries.length === 0 || usedQueries >= 4) {
+    if (parsed.queries.length === 0 || usedQueries >= MAX_QUERIES) {
       // No hay más consultas, terminamos
       break;
     }
@@ -180,8 +189,8 @@ export async function POST(req: NextRequest) {
         role: "user",
         content:
           `[RESULTADO DE CONSULTA — model=${(q as ReadQuery).model}]\n` +
-          JSON.stringify(result, null, 2).slice(0, 6000) +
-          `\n\nUsa este resultado para redactar la respuesta final al usuario. No menciones el JSON ni el bloque de query. Responde en español de forma concisa.`,
+          JSON.stringify(result, null, 2).slice(0, 8000) +
+          `\n\nUsa este resultado para redactar la respuesta final al usuario o para emitir las acciones json-action correspondientes. No menciones el JSON ni el bloque de query. Responde en español de forma concisa.`,
       });
     }
   }

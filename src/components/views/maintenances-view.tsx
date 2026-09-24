@@ -57,7 +57,11 @@ export function MaintenancesView() {
     queryKey: ["users"],
     queryFn: () => fetch(`/api/users`).then((r) => r.json()),
   });
-  const users = (usersData as any)?.items ?? (Array.isArray(usersData) ? usersData : []);
+  const users = Array.isArray((usersData as any)?.items)
+    ? (usersData as any).items
+    : Array.isArray(usersData)
+      ? usersData
+      : [];
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;

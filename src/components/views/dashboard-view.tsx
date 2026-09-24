@@ -100,6 +100,32 @@ export function DashboardView() {
         </Button>
       </div>
 
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {[
+          { label: "Nuevo cliente", icon: Users, view: "clients" as const },
+          { label: "Nuevo presupuesto", icon: FileText, view: "sale-quotes" as const },
+          { label: "Nueva instalación", icon: Wrench, view: "installations" as const },
+          { label: "Nueva cita", icon: CalendarDays, view: "agenda" as const },
+          { label: "Nueva incidencia", icon: Siren, view: "incidents" as const },
+          { label: "Nuevo artículo", icon: Package, view: "articles" as const },
+        ].map((qa) => {
+          const Icon = qa.icon;
+          return (
+            <button
+              key={qa.label}
+              onClick={() => setView(qa.view)}
+              className="group flex flex-col items-center gap-2 p-3 rounded-lg border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all"
+            >
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <Icon className="w-4 h-4 text-primary" />
+              </div>
+              <span className="text-xs font-medium text-center">{qa.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* KPI cards */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => {
