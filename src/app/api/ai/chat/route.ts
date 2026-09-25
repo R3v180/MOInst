@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { db } from "@/lib/db";
-import ZAI from "z-ai-web-dev-sdk";
 import {
   AI_SYSTEM_PROMPT,
   executeReadQuery,
@@ -9,14 +8,10 @@ import {
   type ReadQuery,
 } from "@/lib/ai/tools";
 import { parseAttachedFile, buildAttachmentInstruction, looksLikePriceList, extractPriceListRows, buildMatchedPriceListInstruction } from "@/lib/ai/file-parse";
+import { generateGeminiChat, type ChatMessage } from "@/lib/ai/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-interface ChatMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content: string;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -146,16 +141,6 @@ export async function POST(req: NextRequest) {
     { role: "user", content: userContent },
   ];
 
-  let zai: Awaited<ReturnType<typeof ZAI.create>>;
-  try {
-    zai = await ZAI.create();
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: "No se pudo inicializar el asistente IA", detail: e.message },
-      { status: 500 }
-    );
-  }
-
   // Bucle agéntico: hasta 5 rondas para permitir consultas de lectura + acciones
   let finalText = "";
   let actions: any[] = [];
@@ -164,19 +149,15 @@ export async function POST(req: NextRequest) {
   const MAX_QUERIES = 6;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    let completion: any;
+    let raw = "";
     try {
-      completion = await zai.chat.completions.create({
-        messages: messages as any,
-        thinking: { type: "disabled" },
-      });
+      raw = await generateGeminiChat(messages);
     } catch (e: any) {
       return NextResponse.json(
-        { error: "Error del modelo IA", detail: e.message },
+        { error: "Error del modelo Gemini", detail: e.message },
         { status: 502 }
       );
     }
-    const raw = completion?.choices?.[0]?.message?.content ?? "";
 
     const parsed = parseAiResponse(raw);
     // Acumula texto (si hay), solo del primer round con texto real
