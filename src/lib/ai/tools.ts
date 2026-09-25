@@ -51,7 +51,95 @@ export async function executeReadQuery(q: ReadQuery): Promise<unknown> {
     if (q.count) {
       return await model.count({ where });
     }
-    return await model.findMany(args);
+    const rows = await model.findMany(args);
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return rows;
+    }
+
+    const ids = rows.map((r: any) => r.id).filter(Boolean);
+
+    // Enriquecer clientes con recuento de instalaciones e incidencias
+    if (q.model === "client" && ids.length > 0) {
+      try {
+        const [instCounts, incCounts] = await Promise.all([
+          db.installation.groupBy({
+            by: ["clientId"],
+            where: { clientId: { in: ids } },
+            _count: { id: true },
+          }),
+          db.incident.groupBy({
+            by: ["clientId"],
+            where: { clientId: { in: ids }, status: { in: ["OPEN", "IN_RESOLUTION"] } },
+            _count: { id: true },
+          }),
+        ]);
+        const instMap = new Map(instCounts.map((i) => [i.clientId, i._count.id]));
+        const incMap = new Map(incCounts.map((i) => [i.clientId, i._count.id]));
+        return rows.map((r: any) => ({
+          ...r,
+          installationsCount: instMap.get(r.id) || 0,
+          openIncidentsCount: incMap.get(r.id) || 0,
+        }));
+      } catch {}
+    }
+
+    // Enriquecer artículos con el último precio y proveedor
+    if (q.model === "article" && ids.length > 0) {
+      try {
+        const prices = await db.articleSupplier.findMany({
+          where: { articleId: { in: ids } },
+          orderBy: { priceDate: "desc" },
+          include: { supplier: { select: { id: true, name: true, phone: true } } },
+          take: 50,
+        });
+        const priceMap = new Map<string, any>();
+        for (const p of prices) {
+          if (!priceMap.has(p.articleId)) {
+            priceMap.set(p.articleId, p);
+          }
+        }
+        return rows.map((r: any) => ({
+          ...r,
+          latestPrice: priceMap.get(r.id)?.price ?? null,
+          latestSupplier: priceMap.get(r.id)?.supplier?.name ?? null,
+        }));
+      } catch {}
+    }
+
+    // Enriquecer entidades con adjuntos (fotos, documentos)
+    const entityTypeMap: Record<string, any> = {
+      installation: "INSTALLATION",
+      incident: "INCIDENT",
+      albaran: "ALBARAN",
+      saleOrder: "SALE_ORDER",
+      saleQuote: "SALE_QUOTE",
+      purchaseOrder: "PURCHASE_ORDER",
+      purchaseQuote: "PURCHASE_QUOTE",
+    };
+    const entityType = entityTypeMap[q.model];
+    if (entityType && ids.length > 0) {
+      try {
+        const atts = await db.attachment.findMany({
+          where: { entityType, entityId: { in: ids } },
+          select: { id: true, entityId: true, fileName: true, filePath: true, fileType: true, mimeType: true },
+        });
+        const byId = new Map<string, any[]>();
+        for (const a of atts) {
+          if (!byId.has(a.entityId)) byId.set(a.entityId, []);
+          byId.get(a.entityId)!.push(a);
+        }
+        return rows.map((r: any) => ({
+          ...r,
+          attachments: byId.get(r.id) || [],
+          images: (byId.get(r.id) || [])
+            .filter((a: any) => a.fileType === "PHOTO")
+            .map((a: any) => a.filePath),
+        }));
+      } catch {}
+    }
+
+    return rows;
   } catch (e: any) {
     return { error: e.message ?? "Error en consulta" };
   }
@@ -126,9 +214,38 @@ REGLAS DE COMPORTAMIENTO:
    - create_incident: { clientId, installationId?, saleOrderId?, description } — abre incidencia INC-AAAA-NNNN
    - set_installation_status: { id, status (ACTIVE/REMOVED/REPLACED) }
    - set_sale_order_status: { id, status?, paymentStatus? } — cambia estado del pedido y/o cobro
-   - set_purchase_order_status: { id, status (PENDING/PARTIAL_RECEIVED/RECEIVED) }
    - delete_client, delete_article, delete_supplier, delete_installation, delete_incident, delete_sale_quote: { id } — eliminación con confirmación
-4. **BÚSQUEDA DE ENTIDADES POR NOMBRE (CRÍTICO)**: cuando una acción necesite un id (clientId, articleId, supplierId, installationId) y el usuario solo dio un nombre, SIEMPRE consulta la BD primero con un json-query y usa el id devuelto. Ejemplos:
+4. PRESENTACIÓN VISUAL CON TARJETAS INTERACTIVAS (json-card):
+   Cuando des información sobre clientes, artículos, proveedores, instalaciones, citas, presupuestos o incidencias concretas, EMITE SIEMPRE al final de tu respuesta uno o varios bloques:
+   \`\`\`json-card
+   {
+     "type": "client",
+     "data": {
+       "id": "id_del_cliente",
+       "name": "Nombre completo",
+       "phone": "600123456",
+       "email": "correo@ejemplo.com",
+       "address": "Calle Mayor 12",
+       "city": "Madrid",
+       "nif": "12345678Z",
+       "notes": "Observaciones...",
+       "installationsCount": 1,
+       "openIncidents": 0
+     }
+   }
+   \`\`\`
+   Tipos para json-card:
+   - "client": { id, name, phone, email?, address?, city?, nif?, notes?, installationsCount?, openIncidents? }
+   - "article": { id, name, internalCode, brand?, category?, stock, stockMin, price?, supplierName?, description? }
+   - "supplier": { id, name, phone?, email?, contactName?, address?, notes? }
+   - "installation": { id, equipmentType, brand?, model?, serialNumber?, clientName?, clientId?, location?, installDate?, warrantyEndDate?, notes?, images?: [...] }
+   - "appointment": { id, type, startAt, durationMin?, clientName?, clientId?, address?, status, notes? }
+   - "incident": { id, number, description, status, clientName?, clientId?, equipmentName?, images?: [...] }
+   - "sale_quote": { id, number, clientName?, clientId?, total, status, validUntil?, linesCount? }
+   - "sale_order": { id, number, clientName?, clientId?, status, paymentStatus, total? }
+
+   El frontend renderizará estos bloques como tarjetas elegantes con botones de acción directa: "Llamar" (tel:), "WhatsApp" (wa.me), "Email", "Ver ficha" y visualizador de imágenes.
+5. **BÚSQUEDA DE ENTIDADES POR NOMBRE (CRÍTICO)**: cuando una acción necesite un id (clientId, articleId, supplierId, installationId) y el usuario solo dio un nombre, SIEMPRE consulta la BD primero con un json-query y usa el id devuelto. Ejemplos:
    - Buscar cliente por nombre: \`{"model":"client","where":{"name":{"contains":"Juan","mode":"insensitive"}},"take":5,"select":{"id":true,"name":true,"phonePrimary":true}}\`
    - Buscar artículo por nombre o código: \`{"model":"article","where":{"OR":[{"name":{"contains":"split","mode":"insensitive"}},{"internalCode":{"contains":"DK","mode":"insensitive"}}]},"take":5,"select":{"id":true,"name":true,"internalCode":true}}\`
    - Buscar proveedor por nombre: \`{"model":"supplier","where":{"name":{"contains":"Daikin","mode":"insensitive"}},"take":3,"select":{"id":true,"name":true}}\`
@@ -534,18 +651,33 @@ export async function executeAction(
 // ─────────────────────────────────────────────────────────────────────────────
 // Parsing de bloques JSON embebidos en la respuesta del modelo
 // ─────────────────────────────────────────────────────────────────────────────
+export interface AiCard {
+  type:
+    | "client"
+    | "article"
+    | "supplier"
+    | "installation"
+    | "appointment"
+    | "incident"
+    | "sale_quote"
+    | "sale_order";
+  data: Record<string, any>;
+}
+
 export interface ParsedAiResponse {
   text: string;
   queries: ReadQuery[];
   actions: AiAction[];
+  cards: AiCard[];
 }
 
 const FENCE_RE =
-  /```(?:json-)?(query|action)\s*([\s\S]*?)```/g;
+  /```(?:json-)?(query|action|card)\s*([\s\S]*?)```/g;
 
 export function parseAiResponse(raw: string): ParsedAiResponse {
   const queries: ReadQuery[] = [];
   const actions: AiAction[] = [];
+  const cards: AiCard[] = [];
   let text = raw;
 
   let m: RegExpExecArray | null;
@@ -554,12 +686,37 @@ export function parseAiResponse(raw: string): ParsedAiResponse {
     const body = m[2].trim();
     try {
       const obj = JSON.parse(body);
-      if (kind === "query") queries.push(obj as ReadQuery);
-      else actions.push(obj as AiAction);
+      if (kind === "query") {
+        queries.push(obj as ReadQuery);
+      } else if (kind === "action") {
+        actions.push(obj as AiAction);
+      } else if (kind === "card") {
+        if (Array.isArray(obj)) {
+          for (const item of obj) {
+            cards.push(normalizeCard(item));
+          }
+        } else if (obj && typeof obj === "object") {
+          cards.push(normalizeCard(obj));
+        }
+      }
     } catch {}
     // elimina el bloque del texto visible
     text = text.replace(m[0], "");
   }
   text = text.trim();
-  return { text, queries, actions };
+  return { text, queries, actions, cards };
+}
+
+function normalizeCard(rawCard: any): AiCard {
+  if (rawCard.data && typeof rawCard.data === "object") {
+    return {
+      type: rawCard.type || "client",
+      data: rawCard.data,
+    };
+  }
+  const { type, ...rest } = rawCard;
+  return {
+    type: type || "client",
+    data: rest,
+  };
 }

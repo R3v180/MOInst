@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/session";
 import { promises as fs } from "fs";
 import path from "path";
 
-const UPLOAD_ROOT = "/home/z/my-project/upload";
+const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.join(process.cwd(), "upload");
 
 export async function GET(
   _req: NextRequest,

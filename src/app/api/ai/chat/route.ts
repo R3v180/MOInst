@@ -141,9 +141,10 @@ export async function POST(req: NextRequest) {
     { role: "user", content: userContent },
   ];
 
-  // Bucle agéntico: hasta 5 rondas para permitir consultas de lectura + acciones
+  // Bucle agéntico: hasta 5 rondas para permitir consultas de lectura + acciones + tarjetas
   let finalText = "";
   let actions: any[] = [];
+  let cards: any[] = [];
   let usedQueries = 0;
   const MAX_ROUNDS = 5;
   const MAX_QUERIES = 6;
@@ -168,6 +169,10 @@ export async function POST(req: NextRequest) {
       actions.push(...parsed.actions);
     }
 
+    if (parsed.cards && parsed.cards.length > 0) {
+      cards.push(...parsed.cards);
+    }
+
     if (parsed.queries.length === 0 || usedQueries >= MAX_QUERIES) {
       // No hay más consultas, terminamos
       break;
@@ -183,7 +188,7 @@ export async function POST(req: NextRequest) {
         content:
           `[RESULTADO DE CONSULTA — model=${(q as ReadQuery).model}]\n` +
           JSON.stringify(result, null, 2).slice(0, 8000) +
-          `\n\nUsa este resultado para redactar la respuesta final al usuario o para emitir las acciones json-action correspondientes. No menciones el JSON ni el bloque de query. Responde en español de forma concisa.`,
+          `\n\nUsa este resultado para redactar la respuesta final al usuario o para emitir las acciones json-action o tarjetas json-card correspondientes. No menciones el JSON ni el bloque de query. Responde en español de forma concisa y añade json-card si corresponde para mostrar la tarjeta visual.`,
       });
     }
   }
@@ -191,6 +196,8 @@ export async function POST(req: NextRequest) {
   if (!finalText && actions.length > 0) {
     finalText =
       "He preparado la siguiente acción. Revísala y pulsa «Aplicar» para confirmarla (no se guardará hasta que lo hagas).";
+  } else if (!finalText && cards.length > 0) {
+    finalText = "Aquí tienes la información solicitada:";
   } else if (!finalText) {
     finalText = "(sin respuesta)";
   }
@@ -213,6 +220,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     text: finalText || "(sin respuesta)",
     actions,
+    cards,
     fileName: parsedFile?.name ?? null,
     matchedSummary,
   });

@@ -5,7 +5,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomId } from "@/lib/utils";
 
-const UPLOAD_ROOT = "/home/z/my-project/upload";
+const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.join(process.cwd(), "upload");
 
 const VALID_ENTITY_TYPES = [
   "INSTALLATION",
