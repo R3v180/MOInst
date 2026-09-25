@@ -119,7 +119,7 @@ REGLAS DE COMPORTAMIENTO:
    - update_sale_quote_lines: { id, lines: [{ articleId?, description, quantity, unitPrice, discount?, isLabor? }] } — reemplaza TODAS las líneas y recalcula totales
    - mark_sale_order_installed: { id, installations?: [{ clientId, equipmentType, brand?, model?, serialNumber? }] }
    - create_purchase_quote: { supplierId, saleOrderId?, lines: [{ articleId?, description, quantity, unitPrice }], notes? }
-   - compose_email: { to?, subject?, body } — NO escribe en BD; redacta el email para que el usuario lo copie/envíe (avisos de garantía, reenvío de presupuestos, confirmación de cita)
+   - compose_email: { to?, subject?, body } — redacta el email. Si hay SMTP configurado y "to" es un email válido, lo ENVÍA realmente. Si no hay SMTP o no hay "to", lo devuelve para que el usuario lo copie.
    - delete_attachment: { id }
    - create_sale_quote: { clientId, installationId?, lines: [{ articleId?, description, quantity, unitPrice, discount?, isLabor? }], notes?, validUntil? } — crea presupuesto PV-AAAA-NNNN con líneas y totales calculados
    - generate_sale_order_from_quote: { saleQuoteId } — genera pedido PDV-AAAA-NNNN desde un presupuesto ACCEPTED (copia líneas)
@@ -238,13 +238,22 @@ export async function executeAction(
       return { ok: true, summary: `Presupuesto ${q.number} → ${status}`, result: q };
     }
     case "compose_email": {
-      // No escribe en BD: devuelve el email redactado para que el usuario lo copie/envíe.
+      // Si hay SMTP configurado y `to` es válido, envía realmente.
+      // Si no, devuelve el email redactado para copiar.
       const { to, subject, body } = payload as any;
       if (!body) return { ok: false, summary: "Falta el cuerpo del email" };
+      if (to && /\S+@\S+\.\S+/.test(to)) {
+        const { isSmtpConfigured, sendEmail } = await import("@/lib/email");
+        if (await isSmtpConfigured()) {
+          const r = await sendEmail({ to, subject: subject || "(sin asunto)", text: body });
+          if (r.ok) return { ok: true, summary: `Email enviado a ${to}`, result: { sent: true, to, subject, body } };
+          return { ok: false, summary: `Error al enviar: ${r.error}` };
+        }
+      }
       return {
         ok: true,
-        summary: `Email redactado${to ? ` para ${to}` : ""}${subject ? ` · Asunto: ${subject}` : ""}`,
-        result: { to, subject, body },
+        summary: `Email redactado${to ? ` para ${to}` : ""}${subject ? ` · Asunto: ${subject}` : ""} (SMTP no configurado — copia el texto)`,
+        result: { sent: false, to, subject, body },
       };
     }
     case "update_sale_quote_lines": {

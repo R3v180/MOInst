@@ -887,3 +887,48 @@ Stage Summary:
   * Los labels de purchase-quote y purchase-order usan q.id.slice(-6) / p.number como fallback — si no hay número, el label es un ID corto (mejor que nada pero no ideal).
   * No hay tests automatizados (por instrucciones).
   * Email real SMTP: no implementado (compose + copiar), por diseño.
+
+---
+Task ID: FINAL-FEATURES
+Agent: main
+Task: SMTP configurable + PDF descargable + verificación móvil
+
+Work Log:
+- Detectado bug crítico: el `.env` se había revertido a `DATABASE_URL=file:.../custom.db` (SQLite). Restaurado a la conexión Neon Postgres original.
+
+FEATURES NUEVAS (las 3 que faltaban del spec):
+
+1. **SMTP configurable** (`src/lib/email.ts` + `src/app/api/email/test/route.ts` + `src/app/api/email/send/route.ts` + `src/components/views/settings-view.tsx`):
+   - Nuevo helper `src/lib/email.ts`: `getSmtpConfig()`, `isSmtpConfigured()`, `sendEmail()`, `testSmtpConnection()` usando `nodemailer`. Transporter cachedado por config.
+   - `PUT /api/email/test`: guarda la config SMTP (host, port, secure, user, password, fromEmail, fromName) en Setting key "smtp".
+   - `POST /api/email/test`: verifica la conexión SMTP (transporter.verify()).
+   - `POST /api/email/send`: envía email real ({ to, subject, text }). Registra en AiConversation para auditoría.
+   - Nueva pestaña "Email (SMTP)" en Ajustes con formulario completo: host, puerto, secure toggle, user, password, fromEmail, fromName. Botones "Guardar" + "Probar conexión". Ejemplos comunes (Gmail, Mailgun, Office365, Resend).
+   - **IA compose_email actualizado**: si hay SMTP configurado y `to` es un email válido, ENVÍA el email. Si no, devuelve el texto para copiar.
+   - **Sale-quote email dialog actualizado**: si SMTP configurado y cliente tiene email, muestra botón "Enviar" (además de "Copiar"). Mensaje dinámico según si hay SMTP o no.
+   - Verificado: pestaña Email (SMTP) visible en Ajustes ✓, formulario con todos los campos ✓, ejemplos visibles ✓.
+
+2. **PDF descargable del presupuesto** (`src/components/views/sale-quote-detail-view.tsx`):
+   - Instalado `jspdf` + `html2canvas`.
+   - Función `downloadPdf()`: captura el `#print-area` con html2canvas (scale 2, white bg), genera PDF A4 con jsPDF, maneja multi-página, descarga como `{quote.number}.pdf`.
+   - Botón "Descargar PDF" en el diálogo de vista previa (además del botón "Imprimir" existente).
+   - Imports dinámicos (`await import("html2canvas")`, `await import("jspdf")`) para no cargar la lib pesada si no se usa.
+
+3. **Mobile sidebar collapse** (verificación):
+   - El drawer móvil (Sheet) ya renderiza `<SidebarNav />` que tiene el collapse de grupos. Verificado: en viewport 375x812, el botón menú abre el sidebar con todos los grupos colapsables ✓.
+
+Verificación E2E con agent-browser (viewport 1280x800 + 375x812, todo en un comando bash):
+- Login ✓, dashboard ✓.
+- Ajustes → Email (SMTP) tab: formulario visible con "Servidor SMTP", "Puerto", "Usuario", "Contraseña", "Email remitente", "Nombre remitente", "Probar conexión", ejemplos Gmail ✓.
+- Mobile sidebar (375x812): botón menú abre el drawer, sidebar con todos los módulos ✓.
+- Lint: 0 errores.
+- Screenshot: /home/z/my-project/download/moinst-smtp-tab.png.
+
+Stage Summary:
+- Estado: COMPLETO. Las 3 features que faltaban del spec están implementadas:
+  1. SMTP configurable (sin tocar código en el futuro — todo desde Ajustes).
+  2. PDF descargable del presupuesto (jspdf + html2canvas).
+  3. Mobile sidebar collapse (ya funcionaba, verificado).
+- Login demo: socio1@moinst.local / moinst123.
+- El .env fue restaurado a Neon Postgres (estaba revertido a SQLite).
+- Para usar email real: ve a Ajustes → Email (SMTP), rellena host/puerto/user/password/from y pulsa "Probar conexión". Luego el IA y el diálogo de presupuesto enviarán emails automáticamente.

@@ -28,7 +28,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency, formatDate, fullAddress } from "@/lib/format";
 import {
   Save, Loader2, Trash2, Plus, Wrench, FileText, Send, Check, FileInput,
-  Mail, Printer, Clipboard, Pencil, X,
+  Mail, Printer, Clipboard, Pencil, X, Download,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -80,6 +80,69 @@ export function SaleQuoteDetailView() {
   const [draft, setDraft] = useState<any>(null);
   const [showEmail, setShowEmail] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  // ¿SMTP configurado? (para mostrar botón Enviar en el diálogo de email)
+  const { data: smtpConfigured } = useQuery({
+    queryKey: ["smtp-configured"],
+    queryFn: async () => {
+      const r = await fetch("/api/settings");
+      const data = await r.json();
+      const s = data.smtp;
+      return !!(s && s.host && s.user && s.fromEmail && s.password);
+    },
+  });
+
+  // Enviar email vía SMTP
+  const sendEmailMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: client?.email, subject: `Presupuesto ${quote.number}`, text: emailBody }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Error");
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "Email enviado", description: `Enviado a ${client?.email}` });
+      setShowEmail(false);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  async function downloadPdf() {
+    setPdfLoading(true);
+    try {
+      const el = document.getElementById("print-area");
+      if (!el) return;
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#ffffff" });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+      pdf.save(`${quote.number}.pdf`);
+    } catch (e: any) {
+      toast({ title: "Error generando PDF", description: e.message, variant: "destructive" });
+    } finally {
+      setPdfLoading(false);
+    }
+  }
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data: quote, isLoading } = useQuery({
@@ -180,7 +243,6 @@ export function SaleQuoteDetailView() {
 
   useEffect(() => {
     if (quote && !draft) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft({
         clientId: quote.clientId,
         installationId: quote.installationId ?? null,
@@ -641,8 +703,12 @@ export function SaleQuoteDetailView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPreview(false)}>Cerrar</Button>
-            <Button onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" /> Imprimir / PDF
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="w-4 h-4 mr-2" /> Imprimir
+            </Button>
+            <Button onClick={() => downloadPdf()} disabled={pdfLoading}>
+              {pdfLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              Descargar PDF
             </Button>
           </DialogFooter>
           <style dangerouslySetInnerHTML={{ __html: `@media print { body * { visibility: hidden !important; } #print-area, #print-area * { visibility: visible !important; } #print-area { position: absolute; top: 0; left: 0; width: 100%; border: none !important; } }` }} />
@@ -664,14 +730,17 @@ export function SaleQuoteDetailView() {
               <Label>Mensaje</Label>
               <Textarea value={emailBody} readOnly rows={10} className="font-mono text-xs" />
             </div>
-            <p className="text-xs text-amber-600 flex items-center gap-1.5">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Mail className="w-3.5 h-3.5" />
-              No se envía automáticamente: copia el texto y pégalo en tu cliente de correo.
+              {smtpConfigured
+                ? "SMTP configurado: el email se enviará directamente al pulsar Enviar."
+                : "SMTP no configurado: copia el texto y pégalo en tu cliente de correo. Configura SMTP en Ajustes."}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEmail(false)}>Cerrar</Button>
             <Button
+              variant="outline"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(emailBody);
@@ -683,6 +752,12 @@ export function SaleQuoteDetailView() {
             >
               <Clipboard className="w-4 h-4 mr-2" /> Copiar
             </Button>
+            {smtpConfigured && client?.email && (
+              <Button onClick={sendEmailMut.mutate} disabled={sendEmailMut.isPending}>
+                {sendEmailMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Enviar
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

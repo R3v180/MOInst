@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -105,6 +105,7 @@ export function SettingsView() {
           <TabsTrigger value="users">Usuarios</TabsTrigger>
           <TabsTrigger value="catalogs">Catálogos</TabsTrigger>
           <TabsTrigger value="templates">Plantillas</TabsTrigger>
+          <TabsTrigger value="email">Email (SMTP)</TabsTrigger>
           <TabsTrigger value="system">Sistema</TabsTrigger>
         </TabsList>
 
@@ -126,6 +127,10 @@ export function SettingsView() {
           ) : (
             <TemplatesTab settings={settings} />
           )}
+        </TabsContent>
+
+        <TabsContent value="email">
+          <SmtpTab />
         </TabsContent>
 
         <TabsContent value="system">
@@ -986,5 +991,124 @@ function InfoCard({
       </div>
       <div className="mt-1 text-sm font-medium">{value}</div>
     </div>
+  );
+}
+
+function SmtpTab() {
+  const qc = useQueryClient();
+  const [d, setD] = useState<any>({ host: "", port: 587, secure: false, user: "", password: "", fromEmail: "", fromName: "MOInst" });
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const { data: smtpConfig } = useQuery({
+    queryKey: ["smtp"],
+    queryFn: async () => {
+      const r = await fetch("/api/settings");
+      const data = await r.json();
+      return data.smtp ?? null;
+    },
+  });
+
+  // Cargar config existente cuando llegue
+  useEffect(() => {
+    if (smtpConfig && !d.host) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setD(smtpConfig);
+    }
+  }, [smtpConfig]);
+
+  const set = (k: string, v: any) => setD((p: any) => ({ ...p, [k]: v }));
+
+  const saveMut = useMutation({
+    mutationFn: async (payload: any) => {
+      const r = await fetch("/api/email/test", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok) {
+        const e = await r.json();
+        throw new Error(e.error ?? "Error");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Configuración SMTP guardada" });
+      qc.invalidateQueries({ queryKey: ["smtp"] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const testMut = useMutation({
+    mutationFn: async () => {
+      setTesting(true);
+      const r = await fetch("/api/email/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
+      setTesting(false);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Error");
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "Conexión SMTP correcta", description: "El servidor de email responde correctamente." });
+    },
+    onError: (e: any) => toast({ title: "Error de conexión", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardContent className="p-4 sm:p-6 space-y-4">
+        <div>
+          <h3 className="font-semibold">Configuración SMTP</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Configura tu servidor de email para enviar presupuestos, avisos de cita y notificaciones de garantía directamente desde la app y desde el asistente IA. Si no está configurado, los emails se redactan y se copian al portapapeles.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <Label>Servidor SMTP (host)</Label>
+            <Input placeholder="smtp.gmail.com" value={d.host ?? ""} onChange={(e) => set("host", e.target.value)} />
+          </div>
+          <div>
+            <Label>Puerto</Label>
+            <Input type="number" value={d.port ?? 587} onChange={(e) => set("port", parseInt(e.target.value, 10))} />
+          </div>
+          <div>
+            <Label>Conexión segura (SSL/TLS)</Label>
+            <div className="flex items-center gap-2 h-10">
+              <Switch checked={!!d.secure} onCheckedChange={(v) => set("secure", v)} />
+              <span className="text-xs text-muted-foreground">{d.secure ? "Sí (puerto 465 típico)" : "No (puerto 587 típico, STARTTLS)"}</span>
+            </div>
+          </div>
+          <div>
+            <Label>Usuario</Label>
+            <Input placeholder="tu@email.com" value={d.user ?? ""} onChange={(e) => set("user", e.target.value)} />
+          </div>
+          <div>
+            <Label>Contraseña</Label>
+            <Input type="password" placeholder="••••••••" value={d.password ?? ""} onChange={(e) => set("password", e.target.value)} />
+          </div>
+          <div>
+            <Label>Email remitente</Label>
+            <Input type="email" placeholder="envios@tuempresa.com" value={d.fromEmail ?? ""} onChange={(e) => set("fromEmail", e.target.value)} />
+          </div>
+          <div>
+            <Label>Nombre remitente</Label>
+            <Input placeholder="MOInst" value={d.fromName ?? ""} onChange={(e) => set("fromName", e.target.value)} />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button onClick={() => saveMut.mutate(d)} disabled={saving || !d.host || !d.user || !d.fromEmail}>
+            <Save className="w-4 h-4 mr-2" /> Guardar
+          </Button>
+          <Button variant="outline" onClick={() => testMut.mutate()} disabled={testing || !d.host || !d.user}>
+            {testing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+            Probar conexión
+          </Button>
+        </div>
+        <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+          <div className="font-medium text-foreground">Ejemplos comunes:</div>
+          <div>• Gmail: host smtp.gmail.com, puerto 587, secure=false, user=tu@gmail.com, password=contraseña de aplicación</div>
+          <div>• Mailgun: host smtp.mailgun.org, puerto 587, secure=false</div>
+          <div>• Office365: host smtp.office365.com, puerto 587, secure=false</div>
+          <div>• Resend: host smtp.resend.com, puerto 465, secure=true, user=resend</div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
